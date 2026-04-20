@@ -3,6 +3,7 @@
 Goldclaw is a high-performance, private AI engine engineered for total cognitive sovereignty. It is a synthesis of three elite frameworks: the "skeletal" speed of ZeroClaw, the advanced reasoning loops of Hermes, and the modular agentic versatility of OpenClaw. The result is a "Machine-Person" that lives, learns, and evolves on your hardware.
 
 🧬 The Goldclaw DNA
+
 Goldclaw is built on a "Golden-Ratio" architecture:
 
 Speed (ZeroClaw Foundation): Ultra-lean Rust/Node primitives for sub-10ms memory retrieval.
