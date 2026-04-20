@@ -1,0 +1,23 @@
+# Rust build artifacts
+/target/
+
+# Node.js dependencies
+/node_modules/
+
+# Log files
+*.log
+
+# SQLite and other DB files
+*.db
+*.sqlite
+*.sqlite3
+
+# Goldclaw runtime storage (private data)
+/home/user/.goldclaw/storage/
+
+# VS Code settings
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
