@@ -1,24 +1,48 @@
-# Goldclaw: The Sovereign Machine-Person
+🔱 Goldclaw: The Sovereign Machine-Person
 
-Goldclaw is a high-performance, private, and sovereign AI engine designed for those who demand total control over their machine intelligence. It is built for privacy, speed, and extensibility—run it on your own hardware, with no cloud lock-in, no telemetry, and no compromise.
+Goldclaw is a high-performance, private AI engine engineered for total cognitive sovereignty. It is a synthesis of three elite frameworks: the "skeletal" speed of ZeroClaw, the advanced reasoning loops of Hermes, and the modular agentic versatility of OpenClaw. The result is a "Machine-Person" that lives, learns, and evolves on your hardware.
 
-## Philosophy
-- **Sovereignty:** You own your data, your models, and your agent. No third-party dependencies, no forced updates, no vendor lock-in.
-- **Performance:** Rust-powered, single-binary runtime. Minimal RAM and CPU usage. Designed for edge devices and power users alike.
-- **Privacy:** No tracking, no analytics, no phoning home. All computation happens on your hardware.
-- **Extensibility:** Modular, hackable, and open. Integrate with your workflows, hardware, and networks.
+🧬 The Goldclaw DNA
+Goldclaw is built on a "Golden-Ratio" architecture:
 
-## One-Liner Install (Phase 3)
+Speed (ZeroClaw Foundation): Ultra-lean Rust/Node primitives for sub-10ms memory retrieval.
 
-```sh
-curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/goldclaw/main/install.sh | bash
-```
+Intelligence (Hermes Framework): Deep chain-of-thought reasoning and complex task planning.
 
-Replace `YOUR_GITHUB_USERNAME` with your actual GitHub username after pushing.
+Agency (OpenClaw Versatility): Modular tool-use and seamless integration with local APIs.
 
-## Getting Started
-- See `install.sh` for full installation and onboarding instructions.
-- Run `goldclaw onboard` after install to configure your workspace and models.
+✨ Key Sovereign Features
 
-## License
-Goldclaw is open source under the MIT or Apache 2.0 license. See LICENSE for details.
+🌌 The Dream State & Self-Evolution
+Goldclaw doesn't just wait for prompts. In its "Dream State," the engine autonomously processes past interactions, defragments its vector memory, and synthesizes new insights. This allows for Self-Evolution: the agent updates its own SOUL.md and memory weights to better align with your goals over time.
+
+👥 Multi-Agent Toggle
+Transition from a single focused entity to a collaborative swarm. With the Multi-Agent Toggle, Goldclaw can bifurcate its personality to tackle complex projects. Spin up a "Strategist" and a "Coder" within the same environment, allowing them to peer-review and iterate on tasks autonomously.
+
+🖥️ Native WebUI
+A streamlined, high-performance interface designed for the 2026 AI era:
+
+Real-Time Soul Monitor: Watch the agent's internal state and emotional vectoring live.
+
+Memory Explorer: Visualize and prune the RAM-pinned LanceDB clusters.
+
+Toggle Control: Instant hardware switches for Multi-Agent mode and Dream-State cycles.
+
+🚀 RAM-Pinned Architecture
+By pinning embedding models and vector stores directly to system RAM, Goldclaw achieves near-instant recall of long-term context, bypassing the latency of traditional disk-based databases.
+
+📥 One-Liner Install
+Deploy the Goldclaw environment on any Linux/WSL system with one command:
+
+Bash
+curl -sSL https://raw.githubusercontent.com/Mexor-dev/Goldclaw/main/install.sh | bash
+
+🛠️ Getting Started
+Onboard: Run goldclaw onboard to initialize your local workspace.
+
+The Soul: Edit workspace/SOUL.md to define the agent's core identity.
+
+The Dream: Enable "Dream State" in the WebUI to allow the engine to begin self-evolution.
+
+📄 License
+Goldclaw is open-source under the MIT License. Build, fork, and evolve—just keep it sovereign.
