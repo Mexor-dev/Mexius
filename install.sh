@@ -30,17 +30,24 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Repo root: $REPO_ROOT"
 
-# Build Goldclaw API from workspace root
+# Explicit workspace build
 cd "$REPO_ROOT"
-cargo build --release -p goldclaw-api
+echo "Building workspace..."
+cargo build --release --workspace --bin goldclaw-api
 
-# Dynamic binary discovery
-BIN_PATH=$(find "$REPO_ROOT/target/release" -name "goldclaw-api" -type f -executable | head -n 1)
+# Fail-proof binary discovery (search entire repo root)
+BIN_PATH=$(find "$REPO_ROOT" -name "goldclaw-api" -type f | head -n 1)
 if [ -z "$BIN_PATH" ]; then
-  echo "Error: goldclaw-api binary not found in target/release. Build may have failed."
+  echo "Error: goldclaw-api binary not found. Build may have failed."
+  echo "Current directory: $(pwd)"
+  echo "Listing target/release contents:"
+  ls -l "$REPO_ROOT/target/release" || echo "(target/release missing)"
   exit 1
 fi
 echo "Discovered binary: $BIN_PATH"
+
+# Permission force
+chmod +x "$BIN_PATH"
 
 # Global symlink
 sudo ln -sf "$BIN_PATH" /usr/local/bin/goldclaw
