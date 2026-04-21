@@ -1,10 +1,21 @@
 [package]
-name = 'goldclaw-api'
-version = '0.1.0'
-edition = '2021'
+name = "goldclaw-api"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "goldclaw_api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "goldclaw"
+path = "src/main.rs"
 
 [dependencies]
-tokio = { version = '1', features = ['full'] }
-lancedb = '0.4'
-serde = { version = '1.0', features = ['derive'] }
-serde_json = '1.0'
+clap = { version = "4", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "0.14", features = ["server", "http1", "runtime", "tcp"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

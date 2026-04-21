@@ -1,5 +1,5 @@
 [workspace]
-members = [
+members = [".goldclaw_temp",
     'crates/goldclaw-api',
 ]
 resolver = '2'

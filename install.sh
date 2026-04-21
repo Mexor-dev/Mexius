@@ -26,20 +26,36 @@ if ! command -v cargo >/dev/null 2>&1; then
   . "$HOME/.cargo/env"
 fi
 
+
+# --- Goldclaw Cold Start Logic ---
+
+# If not in a git repo, clone it
+if [ ! -d .git ]; then
+  echo "No .git directory found. Cloning Goldclaw..."
+  cd ~
+  if [ -d Goldclaw ]; then
+    echo "Goldclaw directory already exists. Using it."
+    cd Goldclaw
+    git pull
+  else
+    git clone https://github.com/Mexor-dev/Goldclaw.git
+    cd Goldclaw
+  fi
+fi
+
 # Detect repo root
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Repo root: $REPO_ROOT"
 
-
-# Explicit workspace build with manifest path
+# Build
 cd "$REPO_ROOT"
-echo "Building goldclaw-api binary..."
-cargo build --release --workspace --bin goldclaw-api --manifest-path "$REPO_ROOT/crates/goldclaw-api/Cargo.toml"
+echo "Building goldclaw binary..."
+cargo build --release --manifest-path "$REPO_ROOT/crates/goldclaw-api/Cargo.toml" --bin goldclaw
 
 # Fail-proof binary discovery (search entire repo root)
-BINARY_PATH=$(find "$REPO_ROOT" -type f -name "goldclaw-api" -executable | head -n 1)
+BINARY_PATH=$(find "$REPO_ROOT" -type f -name "goldclaw" -executable | head -n 1)
 if [ -z "$BINARY_PATH" ] || [ ! -f "$BINARY_PATH" ]; then
-  echo "Error: goldclaw-api binary not found. Build may have failed."
+  echo "Error: goldclaw binary not found. Build may have failed."
   echo "Current directory: $(pwd)"
   echo "Listing target/release contents:"
   ls -l "$REPO_ROOT/target/release" || echo "(target/release missing)"
@@ -49,76 +65,27 @@ echo "Discovered binary: $BINARY_PATH"
 
 # Permission force
 chmod +x "$BINARY_PATH"
+chmod +x "$REPO_ROOT/install.sh"
 
-# Global symlink
-sudo ln -sf "$BINARY_PATH" /usr/local/bin/goldclaw
-echo "Symlinked /usr/local/bin/goldclaw -> $BINARY_PATH"
-    let ws = base.join("workspace");
-    let models = base.join("models");
-    fs::create_dir_all(&ws).ok();
-    fs::create_dir_all(&models).ok();
-}
-EOF
-
-rustc goldclaw_init.rs -o goldclaw_init && ./goldclaw_init && rm goldclaw_init.rs goldclaw_init
+# Symlink or PATH logic
+if [ -w /usr/local/bin ]; then
+  sudo ln -sf "$BINARY_PATH" /usr/local/bin/goldclaw
+  echo "Symlinked /usr/local/bin/goldclaw -> $BINARY_PATH"
+else
+  echo "No write access to /usr/local/bin. Adding target dir to PATH in ~/.bashrc."
+  GOLDCLAW_DIR=$(dirname "$BINARY_PATH")
+  if ! grep -q "$GOLDCLAW_DIR" ~/.bashrc; then
+    echo "export PATH=\"$GOLDCLAW_DIR:\$PATH\"" >> ~/.bashrc
+    echo "Added $GOLDCLAW_DIR to PATH in ~/.bashrc."
+  fi
+fi
 
 # Embedded dashboard build (Rust-Embed)
 echo "Embedding WebUI dist folder..."
 # (Assume src/webui.rs uses rust-embed and is already set up)
 
-# Persistence injection (systemd/launchd)
-if [ -d /etc/systemd/system ]; then
-  echo "Systemd detected."
-  read -p "Install Goldclaw as a systemd service? [y/N] " yn
-  if [ "$yn" = "y" ] || [ "$yn" = "Y" ]; then
-    sudo tee /etc/systemd/system/goldclaw.service > /dev/null <<SERVICE
-[Unit]
-Description=Goldclaw AI Engine
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=$HOME/goldclaw/target/release/goldclaw daemon
-Restart=always
-User=$USER
-WorkingDirectory=$HOME/goldclaw
-
-[Install]
-WantedBy=multi-user.target
-SERVICE
-    sudo systemctl daemon-reload
-    sudo systemctl enable goldclaw
-    sudo systemctl start goldclaw
-    echo "Goldclaw service installed and started."
-  fi
-elif [ "$(uname)" = "Darwin" ]; then
-  echo "launchd detected."
-  read -p "Install Goldclaw as a launchd service? [y/N] " yn
-  if [ "$yn" = "y" ] || [ "$yn" = "Y" ]; then
-    cat > ~/Library/LaunchAgents/ai.goldclaw.engine.plist <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>ai.goldclaw.engine</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>$HOME/goldclaw/target/release/goldclaw</string>
-    <string>daemon</string>
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>WorkingDirectory</key>
-  <string>$HOME/goldclaw</string>
-</dict>
-</plist>
-PLIST
-    launchctl load ~/Library/LaunchAgents/ai.goldclaw.engine.plist
-    echo "Goldclaw launchd service installed and loaded."
-  fi
-else
-  echo "No supported service manager detected. Manual start required."
-fi
-
-echo "Goldclaw installation complete. Run ./target/release/goldclaw onboard to finish setup."
+echo "Build and install complete. You can start the agent with:"
+echo "  goldclaw start"
+echo "If you want the agent to run in background and capture logs, run:"
+echo "  nohup goldclaw start > /tmp/goldclaw.log 2>&1 &"
+echo "Check logs with: tail -n 200 /tmp/goldclaw.log"
