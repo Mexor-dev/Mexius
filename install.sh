@@ -30,28 +30,28 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Repo root: $REPO_ROOT"
 
-# Explicit workspace build
+# Explicit package build with manifest path
 cd "$REPO_ROOT"
-echo "Building workspace..."
-cargo build --release --workspace --bin goldclaw-api
+echo "Building goldclaw-api binary..."
+cargo build --release --manifest-path "$REPO_ROOT/crates/goldclaw-api/Cargo.toml"
 
 # Fail-proof binary discovery (search entire repo root)
-BIN_PATH=$(find "$REPO_ROOT" -name "goldclaw-api" -type f | head -n 1)
-if [ -z "$BIN_PATH" ]; then
+BINARY_PATH=$(find "$REPO_ROOT" -name "goldclaw-api" -type f | head -n 1)
+if [ -z "$BINARY_PATH" ] || [ ! -f "$BINARY_PATH" ]; then
   echo "Error: goldclaw-api binary not found. Build may have failed."
   echo "Current directory: $(pwd)"
   echo "Listing target/release contents:"
   ls -l "$REPO_ROOT/target/release" || echo "(target/release missing)"
   exit 1
 fi
-echo "Discovered binary: $BIN_PATH"
+echo "Discovered binary: $BINARY_PATH"
 
 # Permission force
-chmod +x "$BIN_PATH"
+chmod +x "$BINARY_PATH"
 
 # Global symlink
-sudo ln -sf "$BIN_PATH" /usr/local/bin/goldclaw
-echo "Symlinked /usr/local/bin/goldclaw -> $BIN_PATH"
+sudo ln -sf "$BINARY_PATH" /usr/local/bin/goldclaw
+echo "Symlinked /usr/local/bin/goldclaw -> $BINARY_PATH"
     let ws = base.join("workspace");
     let models = base.join("models");
     fs::create_dir_all(&ws).ok();
