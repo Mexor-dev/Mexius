@@ -30,13 +30,14 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Repo root: $REPO_ROOT"
 
-# Explicit package build with manifest path
+
+# Explicit workspace build with manifest path
 cd "$REPO_ROOT"
 echo "Building goldclaw-api binary..."
-cargo build --release --manifest-path "$REPO_ROOT/crates/goldclaw-api/Cargo.toml"
+cargo build --release --workspace --bin goldclaw-api --manifest-path "$REPO_ROOT/crates/goldclaw-api/Cargo.toml"
 
 # Fail-proof binary discovery (search entire repo root)
-BINARY_PATH=$(find "$REPO_ROOT" -name "goldclaw-api" -type f | head -n 1)
+BINARY_PATH=$(find "$REPO_ROOT" -type f -name "goldclaw-api" -executable | head -n 1)
 if [ -z "$BINARY_PATH" ] || [ ! -f "$BINARY_PATH" ]; then
   echo "Error: goldclaw-api binary not found. Build may have failed."
   echo "Current directory: $(pwd)"
