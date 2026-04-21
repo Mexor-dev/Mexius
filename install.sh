@@ -1,9 +1,7 @@
-#!/bin/sh
+#!/bin/bash
 set -eu
 
-# Goldclaw Master Installer
-# Installs all system dependencies and builds Goldclaw from source.
-
+# Goldclaw Master Installer (Dynamic Pathing)
 REQUIRED_PACKAGES="libssl-dev pkg-config build-essential ca-certificates curl python3"
 
 # Detect OS and install dependencies
@@ -28,16 +26,25 @@ if ! command -v cargo >/dev/null 2>&1; then
   . "$HOME/.cargo/env"
 fi
 
-# Build Goldclaw
-cargo build --release
+# Detect repo root
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "Repo root: $REPO_ROOT"
 
-# Self-initialization logic (first launch)
-cat <<'EOF' > goldclaw_init.rs
-use std::fs;
-use std::path::PathBuf;
-fn main() {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
-    let base = PathBuf::from(format!("{}/.goldclaw", home));
+# Build Goldclaw API from workspace root
+cd "$REPO_ROOT"
+cargo build --release -p goldclaw-api
+
+# Dynamic binary discovery
+BIN_PATH=$(find "$REPO_ROOT/target/release" -name "goldclaw-api" -type f -executable | head -n 1)
+if [ -z "$BIN_PATH" ]; then
+  echo "Error: goldclaw-api binary not found in target/release. Build may have failed."
+  exit 1
+fi
+echo "Discovered binary: $BIN_PATH"
+
+# Global symlink
+sudo ln -sf "$BIN_PATH" /usr/local/bin/goldclaw
+echo "Symlinked /usr/local/bin/goldclaw -> $BIN_PATH"
     let ws = base.join("workspace");
     let models = base.join("models");
     fs::create_dir_all(&ws).ok();
