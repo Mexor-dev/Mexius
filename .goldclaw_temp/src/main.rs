@@ -1,1 +1,3 @@
-fn main(){ println!(goldclaw
+fn main() {
+    println!("goldclaw");
+}

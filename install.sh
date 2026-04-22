@@ -84,6 +84,61 @@ fi
 echo "Embedding WebUI dist folder..."
 # (Assume src/webui.rs uses rust-embed and is already set up)
 
+
+# Enable linger so user services can keep running after logout/terminal close
+if command -v loginctl >/dev/null 2>&1; then
+  echo "Enabling linger for $(whoami)"
+  sudo loginctl enable-linger $(whoami) || true
+fi
+
+# Create user-level systemd service for Goldclaw
+SERVICE_PATH="$HOME/.config/systemd/user/goldclaw.service"
+EXEC_PATH="/usr/local/bin/goldclaw"
+if [ ! -f "$EXEC_PATH" ]; then
+  EXEC_PATH="$BINARY_PATH"
+fi
+
+mkdir -p "$HOME/.config/systemd/user"
+echo "Writing user systemd service to $SERVICE_PATH"
+cat > "$SERVICE_PATH" <<EOF
+[Unit]
+Description=Goldclaw Entity (User Service)
+After=network.target ollama.service
+
+[Service]
+ExecStart=$EXEC_PATH start
+Restart=always
+
+[Install]
+WantedBy=default.target
+EOF
+
+echo "Reloading user systemd daemon and enabling goldclaw.service (user)"
+systemctl --user daemon-reload || true
+systemctl --user enable --now goldclaw.service || true
+
+# If ollama exists as a user service, enable it at boot
+if systemctl --user list-unit-files | grep -q "ollama"; then
+  echo "Enabling Ollama user service to start at boot"
+  systemctl --user enable --now ollama || true
+fi
+
+# Create a Windows boot helper script for users who want WSL priming
+if [ ! -f "$REPO_ROOT/setup-windows-boot.ps1" ]; then
+  cat > "$REPO_ROOT/setup-windows-boot.ps1" <<'PS'
+# setup-windows-boot.ps1
+# Creates a scheduled task that runs on Windows startup to prime WSL.
+# Run this from an elevated PowerShell prompt.
+
+$Distro = "Ubuntu"
+$TaskName = "Goldclaw_Boot"
+$Action = "wsl.exe -d $Distro --exec /bin/true"
+
+schtasks /Create /TN $TaskName /TR $Action /SC ONSTART /RU SYSTEM /F
+Write-Host "Scheduled task $TaskName created to prime WSL on boot."
+PS
+fi
+
 echo "Build and install complete. You can start the agent with:"
 echo "  goldclaw start"
 echo "If you want the agent to run in background and capture logs, run:"
