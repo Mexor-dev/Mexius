@@ -1,0 +1,25 @@
+LIVE_AUDIT_START Wed Apr 22 21:17:13 BST 2026
+   Compiling goldclaw-memory v0.1.0 (/home/user/herma/crates/goldclaw-memory-mini)
+    Finished `release` profile [optimized] target(s) in 0.59s
+     Running unittests src/lib.rs (target/release/deps/goldclaw_memory-a32433fd636a9283)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/live_audit.rs (target/release/deps/live_audit-ba61a6c057ee9692)
+
+running 1 test
+Inserted 10000 entries. Avg recall = 0 µs (0 ms)
+VmRSS:	    5760 kB
+test live_audit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests goldclaw_memory
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+LIVE_AUDIT_END Wed Apr 22 21:17:14 BST 2026

@@ -37,7 +37,7 @@ By pinning embedding models and vector stores directly to system RAM, Goldclaw a
 Deploy Goldclaw on any Linux/WSL system with:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Mexor-dev/Goldclaw/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/Mexor-dev/Herma/main/install.sh | bash
 ```
 
 

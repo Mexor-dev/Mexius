@@ -715,3 +715,9 @@ code, kbd, pre {
   color: var(--pc-text-muted);
   margin-top: 0.25rem;
 }
+
+/* NEXUS panel styles */
+.nexus-panel { z-index: 60; }
+.nexus-entry { background: transparent; border: 1px solid var(--pc-border); padding: 0.5rem; border-radius: 0.5rem; }
+@keyframes nexus-pulse { 0% { box-shadow: 0 0 0 rgba(34,211,238,0.0); } 50% { box-shadow: 0 0 18px rgba(34,211,238,0.22); } 100% { box-shadow: 0 0 0 rgba(34,211,238,0.0); } }
+.nexus-debate { animation: nexus-pulse 1.6s ease-in-out infinite; }

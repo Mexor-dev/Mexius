@@ -9,7 +9,7 @@ mod gateway;
 mod memory_store;
 
 #[derive(Parser)]
-#[command(name = "goldclaw", version, about = "Goldclaw AI Agent Daemon", long_about = None)]
+#[command(name = "herma-gateway", version, about = "Herma Gateway / AI Agent Daemon", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

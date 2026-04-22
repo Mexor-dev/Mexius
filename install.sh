@@ -49,11 +49,11 @@ echo "Repo root: $REPO_ROOT"
 
 # Build
 cd "$REPO_ROOT"
-echo "Building goldclaw binary..."
-cargo build --release --manifest-path "$REPO_ROOT/crates/goldclaw-api/Cargo.toml" --bin goldclaw
+  echo "Building herma-gateway binary..."
+  cargo build --release --manifest-path "$REPO_ROOT/crates/goldclaw-api/Cargo.toml" --bin herma-gateway
 
 # Fail-proof binary discovery (search entire repo root)
-BINARY_PATH=$(find "$REPO_ROOT" -type f -name "goldclaw" -executable | head -n 1)
+BINARY_PATH=$(find "$REPO_ROOT" -type f -name "herma-gateway" -executable | head -n 1)
 if [ -z "$BINARY_PATH" ] || [ ! -f "$BINARY_PATH" ]; then
   echo "Error: goldclaw binary not found. Build may have failed."
   echo "Current directory: $(pwd)"
@@ -62,6 +62,7 @@ if [ -z "$BINARY_PATH" ] || [ ! -f "$BINARY_PATH" ]; then
   exit 1
 fi
 echo "Discovered binary: $BINARY_PATH"
+EXEC_PATH="$BINARY_PATH"
 
 # Permission force
 chmod +x "$BINARY_PATH"
@@ -69,8 +70,8 @@ chmod +x "$REPO_ROOT/install.sh"
 
 # Symlink or PATH logic
 if [ -w /usr/local/bin ]; then
-  sudo ln -sf "$BINARY_PATH" /usr/local/bin/goldclaw
-  echo "Symlinked /usr/local/bin/goldclaw -> $BINARY_PATH"
+  sudo ln -sf "$BINARY_PATH" /usr/local/bin/herma-gateway
+  echo "Symlinked /usr/local/bin/herma-gateway -> $BINARY_PATH"
 else
   echo "No write access to /usr/local/bin. Adding target dir to PATH in ~/.bashrc."
   GOLDCLAW_DIR=$(dirname "$BINARY_PATH")
@@ -92,13 +93,14 @@ if command -v loginctl >/dev/null 2>&1; then
 fi
 
 # Create user-level systemd service for Goldclaw
-SERVICE_PATH="$HOME/.config/systemd/user/goldclaw.service"
-EXEC_PATH="/usr/local/bin/goldclaw"
+SERVICE_PATH="$HOME/.config/systemd/user/herma-gateway.service"
+EXEC_PATH="/usr/local/bin/herma-gateway"
 if [ ! -f "$EXEC_PATH" ]; then
   EXEC_PATH="$BINARY_PATH"
 fi
 
 mkdir -p "$HOME/.config/systemd/user"
+[ -d "$HOME/.config/systemd/user" ] || mkdir -p "$HOME/.config/systemd/user"
 echo "Writing user systemd service to $SERVICE_PATH"
 cat > "$SERVICE_PATH" <<EOF
 [Unit]
@@ -106,16 +108,16 @@ Description=Goldclaw Entity (User Service)
 After=network.target ollama.service
 
 [Service]
-ExecStart=$EXEC_PATH start
+ExecStart=$BINARY_PATH start
 Restart=always
 
 [Install]
 WantedBy=default.target
 EOF
 
-echo "Reloading user systemd daemon and enabling goldclaw.service (user)"
+echo "Reloading user systemd daemon and enabling herma-gateway.service (user)"
 systemctl --user daemon-reload || true
-systemctl --user enable --now goldclaw.service || true
+systemctl --user enable --now herma-gateway.service || true
 
 # If ollama exists as a user service, enable it at boot
 if systemctl --user list-unit-files | grep -q "ollama"; then

@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use std::collections::VecDeque;
-use tokio::sync::Mutex;
+use parking_lot::RwLock;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
@@ -16,11 +16,11 @@ pub struct MemoryFragment {
     pub ts: String,
 }
 
-static PINNED: Lazy<Mutex<VecDeque<MemoryFragment>>> = Lazy::new(|| Mutex::new(VecDeque::new()));
-static AUDIT: Lazy<Mutex<VecDeque<Value>>> = Lazy::new(|| Mutex::new(VecDeque::new()));
+static PINNED: Lazy<RwLock<VecDeque<MemoryFragment>>> = Lazy::new(|| RwLock::new(VecDeque::new()));
+static AUDIT: Lazy<RwLock<VecDeque<Value>>> = Lazy::new(|| RwLock::new(VecDeque::new()));
 
 pub async fn add_fragment(f: MemoryFragment) {
-    let mut lock = PINNED.lock().await;
+    let mut lock = PINNED.write();
     if lock.len() >= 1000 {
         lock.pop_front();
     }
@@ -28,14 +28,13 @@ pub async fn add_fragment(f: MemoryFragment) {
 }
 
 pub async fn top_pinned(n: usize) -> Vec<MemoryFragment> {
-    let lock = PINNED.lock().await;
-    let mut v: Vec<MemoryFragment> = lock.iter().rev().take(n).cloned().collect();
-    // return most-recent-first
+    let lock = PINNED.read();
+    let v: Vec<MemoryFragment> = lock.iter().rev().take(n).cloned().collect();
     v
 }
 
 pub async fn add_audit_event(ev: Value) {
-    let mut lock = AUDIT.lock().await;
+    let mut lock = AUDIT.write();
     if lock.len() >= 2000 {
         lock.pop_front();
     }
@@ -43,6 +42,6 @@ pub async fn add_audit_event(ev: Value) {
 }
 
 pub async fn last_audit_events(n: usize) -> Vec<Value> {
-    let lock = AUDIT.lock().await;
+    let lock = AUDIT.read();
     lock.iter().rev().take(n).cloned().collect()
 }

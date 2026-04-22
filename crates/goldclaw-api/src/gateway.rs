@@ -1,5 +1,6 @@
 use hyper::{service::service_fn, Body, Request, Response, Method, StatusCode, server::conn::Http};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, broadcast};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -13,13 +14,13 @@ const INDEX_HTML: &str = r#"<!doctype html>
 <head>
     <meta charset=\"utf-8\">
     <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
-    <title>Goldclaw Dashboard</title>
+    <title>Herma Dashboard</title>
     <link rel=\"stylesheet\" href=\"/styles.css\">
     <style>body{margin:0;padding:0}</style>
 </head>
 <body>
     <div id=\"app\" class=\"app\">
-        <header class=\"hdr\"><h1>Goldclaw</h1><div class=\"status\" id=\"status\">disconnected</div></header>
+        <header class=\"hdr\"><h1>Herma</h1><div class=\"status\" id=\"status\">disconnected</div></header>
         <main>
             <section style=\"display:flex;gap:12px;padding:12px\">
                 <div style=\"flex:1\"> 
@@ -53,7 +54,7 @@ const STYLES_CSS: &str = r#"body{font-family:ui-monospace,SFMono-Regular,Menlo,M
 #status{font-size:12px;color:#7ff}
 "#;
 
-const APP_JS: &str = r#"document.addEventListener('DOMContentLoaded',()=>{const log=document.getElementById('log');const status=document.getElementById('status');const health=document.getElementById('health');const es=new EventSource('/logs');es.onopen=()=>{status.textContent='connected'};es.onerror=()=>{status.textContent='error'};es.onmessage=(e)=>{const d=document.createElement('div');d.textContent=e.data;log.appendChild(d);log.scrollTop=log.scrollHeight};async function refreshHealth(){try{const r=await fetch('/api/system/health');const j=await r.json();health.innerHTML=`<pre>${JSON.stringify(j,null,2)}</pre>`;if(j && j.external_ip){const ip=document.getElementById('external_ip');if(ip) ip.textContent=j.external_ip;}}catch(err){health.textContent='Health check failed: '+err}};refreshHealth();setInterval(refreshHealth,5000);document.getElementById('run').addEventListener('click',async ()=>{const v=document.getElementById('cmd').value;try{const res=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({intent:'run_tool:shell',content:v})});const txt=await res.text();const d=document.createElement('div');d.textContent='> '+v;log.appendChild(d);const o=document.createElement('div');o.textContent='<= '+txt;log.appendChild(o);log.scrollTop=log.scrollHeight}catch(err){const e=document.createElement('div');e.textContent='ERROR: '+err;log.appendChild(e)}});document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter'){document.getElementById('run').click();e.preventDefault()}});document.getElementById('reboot').addEventListener('click',async ()=>{if(!confirm('Restart Goldclaw service?')) return;try{const r=await fetch('/api/system/reboot',{method:'POST'});const t=await r.text();const e=document.createElement('div');e.textContent='Reboot: '+t;log.appendChild(e)}catch(err){const e=document.createElement('div');e.textContent='Reboot failed: '+err;log.appendChild(e)}});});"#;
+const APP_JS: &str = r#"document.addEventListener('DOMContentLoaded',()=>{const log=document.getElementById('log');const status=document.getElementById('status');const health=document.getElementById('health');const es=new EventSource('/logs');es.onopen=()=>{status.textContent='connected'};es.onerror=()=>{status.textContent='error'};es.onmessage=(e)=>{const d=document.createElement('div');d.textContent=e.data;log.appendChild(d);log.scrollTop=log.scrollHeight};async function refreshHealth(){try{const r=await fetch('/api/system/health');const j=await r.json();health.innerHTML=`<pre>${JSON.stringify(j,null,2)}</pre>`;if(j && j.external_ip){const ip=document.getElementById('external_ip');if(ip) ip.textContent=j.external_ip;}}catch(err){health.textContent='Health check failed: '+err}};refreshHealth();setInterval(refreshHealth,5000);document.getElementById('run').addEventListener('click',async ()=>{const v=document.getElementById('cmd').value;try{const res=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({intent:'run_tool:shell',content:v})});const txt=await res.text();const d=document.createElement('div');d.textContent='> '+v;log.appendChild(d);const o=document.createElement('div');o.textContent='<= '+txt;log.appendChild(o);log.scrollTop=log.scrollHeight}catch(err){const e=document.createElement('div');e.textContent='ERROR: '+err;log.appendChild(e)}});document.getElementById('cmd').addEventListener('keydown',e=>{if(e.key==='Enter'){document.getElementById('run').click();e.preventDefault()}});document.getElementById('reboot').addEventListener('click',async ()=>{if(!confirm('Restart Herma service?')) return;try{const r=await fetch('/api/system/reboot',{method:'POST'});const t=await r.text();const e=document.createElement('div');e.textContent='Reboot: '+t;log.appendChild(e)}catch(err){const e=document.createElement('div');e.textContent='Reboot failed: '+err;log.appendChild(e)}});});"#;
 
 #[derive(Deserialize)]
 struct UiCommand {
@@ -81,13 +82,18 @@ pub async fn run(
     }
 
     // Repo root; allow override with HERMA_ROOT env var (useful after renaming repo)
-    let repo_root = std::env::var("HERMA_ROOT").unwrap_or_else(|_| format!("{}/herma", home));
-    let resolve_repo_path = |p: &str| -> String {
-        if p.starts_with("/home/user/goldclaw") {
-            p.replacen("/home/user/goldclaw", &repo_root, 1)
-        } else {
-            p.to_string()
-        }
+    let repo_root = Arc::new(std::env::var("HERMA_ROOT").unwrap_or_else(|_| format!("{}/herma", home)));
+    // Make a clonable, thread-safe function object for resolving paths so it
+    // can be moved into service closures without ownership issues.
+    let resolve_repo_path: Arc<dyn Fn(&str) -> String + Send + Sync> = {
+        let repo_root = repo_root.clone();
+        Arc::new(move |p: &str| {
+            if p.starts_with("/home/user/goldclaw") {
+                p.replacen("/home/user/goldclaw", repo_root.as_str(), 1)
+            } else {
+                p.to_string()
+            }
+        })
     };
 
     let listener = TcpListener::bind(addr).await?;
@@ -100,17 +106,20 @@ pub async fn run(
         let tx_conn = tx.clone();
         let log_tx_conn = log_tx.clone();
         let thought_tx_conn = thought_tx.clone();
+        let resolve_repo_path_conn = resolve_repo_path.clone();
 
         let svc = service_fn(move |req: Request<Body>| {
             let tx_req = tx_conn.clone();
             let log_tx_req = log_tx_conn.clone();
             let thought_tx_req = thought_tx_conn.clone();
+            let resolve_repo_path = resolve_repo_path_conn.clone();
             async move {
                 match (req.method(), req.uri().path()) {
                     (&Method::GET, "/") => {
                         // Prefer serving the built web UI if present on disk (web/dist/index.html)
-                        let index_path = std::path::Path::new(&resolve_repo_path("/home/user/goldclaw/web/dist/index.html"));
-                        if let Ok(meta) = tokio::fs::metadata(&index_path).await {
+                        let index_pstr = (resolve_repo_path)("/home/user/goldclaw/web/dist/index.html");
+                        let index_path = std::path::Path::new(&index_pstr);
+                        if let Ok(meta) = tokio::fs::metadata(index_path).await {
                             if meta.is_file() {
                                 if let Ok(bytes) = tokio::fs::read(&index_path).await {
                                     let mut res = Response::new(Body::from(bytes));
@@ -303,16 +312,37 @@ pub async fn run(
                         Ok(res)
                     }
                     (&Method::POST, "/api/system/reboot") => {
-                        // Restart the goldclaw user systemd service
-                        let out = match tokio::process::Command::new("systemctl")
-                            .arg("--user")
-                            .arg("restart")
-                            .arg("goldclaw")
-                            .output()
-                            .await
-                        {
-                            Ok(o) => format!("status: {}", o.status),
-                            Err(e) => format!("error: {}", e),
+                        // Restart the herma service. Prefer systemctl in GUI/session
+                        // environments; fall back to a direct kill+spawn in non-interactive
+                        // WSL sessions where DBUS is not available.
+                        let out = if std::env::var("DBUS_SESSION_BUS_ADDRESS").is_ok() {
+                            match tokio::process::Command::new("systemctl")
+                                .arg("--user")
+                                .arg("restart")
+                                .arg("herma-gateway")
+                                .output()
+                                .await
+                            {
+                                Ok(o) => format!("status: {}", o.status),
+                                Err(e) => format!("error: {}", e),
+                            }
+                        } else {
+                            // Non-systemd fallback: try a best-effort pkill + nohup spawn
+                            let bin = if std::path::Path::new("/usr/local/bin/herma-gateway").exists() {
+                                "/usr/local/bin/herma-gateway".to_string()
+                            } else {
+                                // repo-local candidate
+                                "/home/user/herma/target/release/herma-gateway".to_string()
+                            };
+                            let cmd = format!(
+                                "pkill -f herma-gateway || true; nohup {} gateway > /home/user/herma/gateway.log 2>&1 &",
+                                bin
+                            );
+                            // Use non-blocking std::process spawn so reboot does not hang
+                            match std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+                                Ok(_) => format!("fallback: spawned"),
+                                Err(e) => format!("fallback error: {}", e),
+                            }
                         };
                         let res = Response::new(Body::from(out));
                         Ok(res)
@@ -475,7 +505,8 @@ pub async fn run(
                         ];
 
                         for ws in &ws_candidates {
-                            let p = std::path::Path::new(&resolve_repo_path(ws));
+                            let pstr = resolve_repo_path(ws);
+                            let p = std::path::Path::new(&pstr);
                             if let Ok(mem) = goldclaw_memory::SqliteMemory::new(p) {
                                 // If query provided, run recall, otherwise list
                                 let entries_res = if let Some(ref q) = q_param {
@@ -547,7 +578,8 @@ pub async fn run(
 
                             let mut stored = false;
                             for ws in &ws_candidates {
-                                let p = std::path::Path::new(&resolve_repo_path(ws));
+                                let pstr = resolve_repo_path(ws);
+                                let p = std::path::Path::new(&pstr);
                                 if let Ok(mem) = goldclaw_memory::SqliteMemory::new(p) {
                                     match mem.store(key, content, cat_enum.clone(), session).await {
                                         Ok(()) => { stored = true; break; }
@@ -584,7 +616,8 @@ pub async fn run(
                         ];
                         let mut removed = false;
                         for ws in &ws_candidates {
-                            let p = std::path::Path::new(&resolve_repo_path(ws));
+                            let pstr = resolve_repo_path(ws);
+                            let p = std::path::Path::new(&pstr);
                             if let Ok(mem) = goldclaw_memory::SqliteMemory::new(p) {
                                 match mem.forget(key).await {
                                     Ok(ok) => { if ok { removed = true; break; } }
@@ -632,7 +665,8 @@ pub async fn run(
                         ];
 
                         for ws in &ws_candidates {
-                            let p = std::path::Path::new(&resolve_repo_path(ws));
+                            let pstr = resolve_repo_path(ws);
+                            let p = std::path::Path::new(&pstr);
                             if let Ok(mem) = goldclaw_memory::SqliteMemory::new(p) {
                                 if let Ok(entries) = mem.recall("", 10, None, None, None).await {
                                     if !entries.is_empty() {
@@ -688,7 +722,8 @@ pub async fn run(
                                 ];
                                 let mut removed = false;
                                 for ws in &ws_candidates {
-                                    let p = std::path::Path::new(&resolve_repo_path(ws));
+                                    let pstr = (resolve_repo_path)(ws);
+                                    let p = std::path::Path::new(&pstr);
                                     if let Ok(mem) = goldclaw_memory::SqliteMemory::new(p) {
                                         match mem.forget(id).await {
                                             Ok(ok) => { if ok { removed = true; break; } }
@@ -780,7 +815,8 @@ pub async fn run(
                         // If this is a GET request, try to serve static files from
                         // the built web output at /home/user/goldclaw/web/dist.
                         if req.method() == &Method::GET {
-                            let base = std::path::Path::new(&resolve_repo_path("/home/user/goldclaw/web/dist"));
+                            let base_pstr = resolve_repo_path("/home/user/goldclaw/web/dist");
+                            let base = std::path::Path::new(&base_pstr);
                             let req_path = req.uri().path();
                             let rel = if req_path == "/" { "index.html" } else { req_path.trim_start_matches('/') };
 

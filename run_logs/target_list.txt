@@ -1,0 +1,1 @@
+-rwxr-xr-x 2 user user 9467056 Apr 22 21:17 target/release/herma-gateway

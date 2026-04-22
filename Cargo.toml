@@ -1,5 +1,6 @@
 [workspace]
-members = [".goldclaw_temp",
-    'crates/goldclaw-api',
+members = [
+    "crates/goldclaw-api",
+    "crates/goldclaw-memory-mini",
 ]
-resolver = '2'
+resolver = "2"

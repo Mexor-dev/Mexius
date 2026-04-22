@@ -1,0 +1,11 @@
+[Unit]
+Description=Herma Gateway (User Service)
+
+After=network.target ollama.service
+
+[Service]
+ExecStart=/home/user/herma/target/release/herma-gateway start
+Restart=always
+
+[Install]
+WantedBy=default.target
