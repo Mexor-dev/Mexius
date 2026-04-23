@@ -27,3 +27,6 @@ uuid = { version = "1", features = ["v4"] }
 parking_lot = "0.12"
 # Live memory bridge to ZeroClaw memory crate (local path)
 goldclaw_memory = { package = "goldclaw-memory", path = "../goldclaw-memory-mini" }
+
+[dev-dependencies]
+tempfile = "3"

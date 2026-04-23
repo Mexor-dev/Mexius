@@ -1,4 +1,4 @@
-const TOKEN_KEY = 'zeroclaw_token';
+const TOKEN_KEY = 'herma_token';
 
 /**
  * Retrieve the stored authentication token.

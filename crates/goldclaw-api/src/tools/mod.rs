@@ -1,6 +1,7 @@
 use crate::hermes::Message;
 use tokio::process::Command;
 use tokio::fs;
+use serde_json::json;
 
 /// Central tool runner for embedded OpenClaw functionality.
 /// Accepts Hermes intents formatted as `run_tool:<name>`.
@@ -51,6 +52,39 @@ pub async fn run_tool(msg: &Message) -> Result<String, String> {
                 }
             }
             "status" => Ok("internal-openclaw:ready".to_string()),
+            "diagnostic" => {
+                // Run lightweight diagnostics reusing zeroclaw helpers where possible.
+                let mut report = serde_json::Map::new();
+
+                // Initialization probe
+                match crate::zeroclaw::initialize().await {
+                    Ok(msg) => { report.insert("initialize".to_string(), serde_json::Value::String(msg)); }
+                    Err(e) => { report.insert("initialize".to_string(), serde_json::Value::String(format!("error: {}", e))); }
+                }
+
+                // Toolset probe
+                match crate::zeroclaw::init_tools().await {
+                    Ok(tools_vec) => {
+                        let tools_json = tools_vec.into_iter().map(|(n,ok)| json!({"name": n, "ok": ok})).collect::<Vec<_>>();
+                        report.insert("tools".to_string(), serde_json::Value::Array(tools_json));
+                    }
+                    Err(e) => { report.insert("tools".to_string(), serde_json::Value::String(format!("error: {}", e))); }
+                }
+
+                // Cargo availability
+                let cargo_ok = Command::new("cargo").arg("--version").output().await.map(|o| o.status.success()).unwrap_or(false);
+                report.insert("cargo".to_string(), serde_json::Value::Bool(cargo_ok));
+
+                // Check gateway port availability (127.0.0.1:42617)
+                let port_ok = tokio::net::TcpListener::bind(("127.0.0.1", 42617)).await.is_ok();
+                report.insert("port_42617_free".to_string(), serde_json::Value::Bool(port_ok));
+
+                // Config presence in current directory
+                let cfg_exists = tokio::fs::metadata("config.toml").await.is_ok();
+                report.insert("config_toml_exists".to_string(), serde_json::Value::Bool(cfg_exists));
+
+                Ok(serde_json::Value::Object(report).to_string())
+            }
             other => Err(format!("Unknown embedded tool: {}", other)),
         }
     } else {

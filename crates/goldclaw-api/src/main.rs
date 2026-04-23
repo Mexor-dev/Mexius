@@ -17,11 +17,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start the Goldclaw agent daemon (agent + Web UI)
+    /// Start the Herma agent daemon (agent + Web UI)
     Start,
     /// Run the gateway Web UI only
     Gateway {
-        /// Optional address (default 127.0.0.1:42617)
+        /// Optional address (default 0.0.0.0:42617)
         addr: Option<String>,
     },
     /// Run system checks (config + tools)
@@ -56,14 +56,14 @@ async fn main() {
     match cli.command {
         Commands::Start => {
             let ip = detect_local_ip();
-            log::info!("Goldclaw WebUI available at: http://{}:42617/", ip);
-            log::info!("Starting Goldclaw agent + gateway...");
-            log::info!("Initializing Goldclaw Entity");
+            log::info!("Herma WebUI available at: http://{}:42617/", ip);
+            log::info!("Starting Herma agent + gateway...");
+            log::info!("Initializing Herma Entity");
 
-            // ZeroClaw initialization / health check
+            // Initialization / health check
             match zeroclaw::initialize().await {
-                Ok(msg) => log::info!("ZeroClaw health check: {}", msg),
-                Err(err) => log::warn!("ZeroClaw health check failed: {}", err),
+                Ok(msg) => log::info!("Initialization health check: {}", msg),
+                Err(err) => log::warn!("Initialization health check failed: {}", err),
             }
 
             // Initialize toolset (Shell, File, Git)
@@ -84,7 +84,7 @@ async fn main() {
             hermes::start_listener(tx.clone(), thought_tx.clone());
 
             // Start gateway (pass Hermes sender and log broadcaster)
-            let gw_addr: SocketAddr = "127.0.0.1:42617".parse().expect("invalid gateway addr");
+            let gw_addr: SocketAddr = "0.0.0.0:42617".parse().expect("invalid gateway addr");
             let tx_for_gw = tx.clone();
             let log_tx_for_gw = log_tx.clone();
             let thought_tx_for_gw = thought_tx.clone();
@@ -99,8 +99,8 @@ async fn main() {
             loop {
                 tokio::select! {
                     _ = ticker.tick() => {
-                        log::info!("Goldclaw agent heartbeat...");
-                        let _ = log_tx.send("Goldclaw agent heartbeat...".to_string());
+                        log::info!("Herma agent heartbeat...");
+                            let _ = log_tx.send("Herma agent heartbeat...".to_string());
                     }
                     maybe_msg = rx.recv() => {
                         match maybe_msg {
@@ -142,10 +142,10 @@ async fn main() {
 
             // Stop gateway
             gateway_handle.abort();
-            log::info!("Goldclaw daemon shutting down.");
+            log::info!("Herma daemon shutting down.");
         }
         Commands::Gateway { addr } => {
-            let addr_str = addr.unwrap_or_else(|| "127.0.0.1:42617".to_string());
+            let addr_str = addr.unwrap_or_else(|| "0.0.0.0:42617".to_string());
             let gw_addr: SocketAddr = addr_str.parse().expect("invalid gateway addr");
             // For Gateway-only mode, create placeholder channels to satisfy the
             // gateway API (no Hermes backend running).

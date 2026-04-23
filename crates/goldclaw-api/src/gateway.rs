@@ -2,7 +2,7 @@ use hyper::{service::service_fn, Body, Request, Response, Method, StatusCode, se
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc, broadcast};
+use tokio::sync::{mpsc, broadcast, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::time::{SystemTime, UNIX_EPOCH};
 use hyper::body::Bytes;
@@ -63,6 +63,45 @@ struct UiCommand {
     id: Option<String>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_try_serve_index_for_dashboard() {
+        let td = tempdir().expect("tempdir");
+        let root = td.path().to_str().unwrap().to_string();
+        let dist = std::path::Path::new(&root).join("web").join("dist");
+        tokio::fs::create_dir_all(&dist).await.unwrap();
+        let index_path = dist.join("index.html");
+        tokio::fs::write(&index_path, b"<html>TEST INDEX</html>").await.unwrap();
+
+        let res = try_serve_static_file(&root, "/dashboard").await;
+        assert!(res.is_some(), "expected index for /dashboard");
+        let (bytes, ct) = res.unwrap();
+        assert_eq!(ct, "text/html; charset=utf-8");
+        assert!(String::from_utf8_lossy(&bytes).contains("TEST INDEX"));
+    }
+
+    #[tokio::test]
+    async fn test_try_serve_app_asset_mapping() {
+        let td = tempdir().expect("tempdir");
+        let root = td.path().to_str().unwrap().to_string();
+        let assets = std::path::Path::new(&root).join("web").join("dist").join("assets");
+        tokio::fs::create_dir_all(&assets).await.unwrap();
+        let asset_path = assets.join("index-BJsuCaeP.js");
+        tokio::fs::write(&asset_path, b"console.log('ok')").await.unwrap();
+
+        let req = "/_app/assets/index-BJsuCaeP.js";
+        let res = try_serve_static_file(&root, req).await;
+        assert!(res.is_some(), "expected asset for {}", req);
+        let (bytes, ct) = res.unwrap();
+        assert_eq!(ct, "application/javascript; charset=utf-8");
+        assert!(String::from_utf8_lossy(&bytes).contains("console.log('ok')"));
+    }
+}
+
 /// Run the Hyper gateway and serve embedded UI assets. The gateway receives
 /// `tx` so it can forward UI commands into the Hermes channel, and `log_tx`
 /// is used to stream server logs/events to connected UI clients over SSE.
@@ -81,8 +120,23 @@ pub async fn run(
         Err(e) => log::warn!("Failed to create Herma data dir {:?}: {}", lancedb_path, e),
     }
 
+    // Inspect recent runtime log for known transient bridge errors and warn
+    if let Ok(recent) = tokio::fs::read_to_string("/tmp/herma.log").await {
+        if recent.contains("IncompleteMessage") || recent.contains("ConnectionRefused") {
+            log::warn!("Detected previous bridge errors in /tmp/herma.log (IncompleteMessage/ConnectionRefused). Gateway will use retry/backoff for health probes.");
+        }
+    }
+
     // Repo root; allow override with HERMA_ROOT env var (useful after renaming repo)
     let repo_root = Arc::new(std::env::var("HERMA_ROOT").unwrap_or_else(|_| format!("{}/herma", home)));
+    // In-memory pairing state (code, optional token). Persisted to ~/.herma/pairing.json
+    // Default to paired for local development: initialize with a placeholder
+    // code and a token so the gateway reports `paired: true` by default.
+    let pairing_state: Arc<Mutex<Option<(String, Option<String>)>>> = Arc::new(Mutex::new(Some((
+        "localdev".to_string(),
+        Some("localdev-token".to_string()),
+    ))));
+    let pairing_file = lancedb_path.parent().unwrap_or(&herma_path).join("pairing.json");
     // Make a clonable, thread-safe function object for resolving paths so it
     // can be moved into service closures without ownership issues.
     let resolve_repo_path: Arc<dyn Fn(&str) -> String + Send + Sync> = {
@@ -96,6 +150,101 @@ pub async fn run(
         })
     };
 
+    // Helper to ensure permissive CORS headers are present on responses so
+    // browsers (Windows host) can connect to the WSL backend without WebSocket
+    // or fetch CORS failures.
+    fn add_cors_headers(res: &mut Response<Body>) {
+        use hyper::header::{ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_CREDENTIALS};
+        res.headers_mut().insert(ACCESS_CONTROL_ALLOW_ORIGIN, hyper::header::HeaderValue::from_static("*"));
+        res.headers_mut().insert(ACCESS_CONTROL_ALLOW_METHODS, hyper::header::HeaderValue::from_static("GET, POST, OPTIONS"));
+        res.headers_mut().insert(ACCESS_CONTROL_ALLOW_HEADERS, hyper::header::HeaderValue::from_static("Content-Type, Authorization, Upgrade"));
+        res.headers_mut().insert(ACCESS_CONTROL_ALLOW_CREDENTIALS, hyper::header::HeaderValue::from_static("true"));
+    }
+
+    // Helper: try to locate and read a static file for a given request path.
+    // Handles exact files under `${HERMA_ROOT}/web/dist`, the `_app/` prefix
+    // compatibility mapping, a legacy favicon mapping, and SPA index fallback.
+    async fn try_serve_static_file(herma_root: &str, req_path: &str) -> Option<(Vec<u8>, &'static str)> {
+        let base_pstr = format!("{}/web/dist", herma_root);
+        let base = std::path::Path::new(&base_pstr);
+        let rel = if req_path == "/" { "index.html" } else { req_path.trim_start_matches('/') };
+
+        // Try exact file first
+        let fs_path = base.join(rel);
+        if let Ok(meta) = tokio::fs::metadata(&fs_path).await {
+            if meta.is_file() {
+                if let Ok(bytes) = tokio::fs::read(&fs_path).await {
+                    let ct = match fs_path.extension().and_then(|s| s.to_str()) {
+                        Some("html") => "text/html; charset=utf-8",
+                        Some("css") => "text/css; charset=utf-8",
+                        Some("js") => "application/javascript; charset=utf-8",
+                        Some("png") => "image/png",
+                        Some("jpg") | Some("jpeg") => "image/jpeg",
+                        Some("svg") => "image/svg+xml",
+                        Some("wasm") => "application/wasm",
+                        Some("json") => "application/json; charset=utf-8",
+                        Some("map") => "application/json; charset=utf-8",
+                        _ => "application/octet-stream",
+                    };
+                    log::debug!("Static: serving {} for request {}", fs_path.display(), req_path);
+                    return Some((bytes, ct));
+                }
+            }
+        }
+
+        // Support `_app/` prefix mapping used by some SPA builds
+        if rel.starts_with("_app/") {
+            let without_prefix = &rel["_app/".len()..];
+            let alt_path = base.join(without_prefix);
+            if let Ok(meta) = tokio::fs::metadata(&alt_path).await {
+                if meta.is_file() {
+                    if let Ok(bytes) = tokio::fs::read(&alt_path).await {
+                        let ct = match alt_path.extension().and_then(|s| s.to_str()) {
+                            Some("html") => "text/html; charset=utf-8",
+                            Some("css") => "text/css; charset=utf-8",
+                            Some("js") => "application/javascript; charset=utf-8",
+                            Some("png") => "image/png",
+                            Some("jpg") | Some("jpeg") => "image/jpeg",
+                            Some("svg") => "image/svg+xml",
+                            Some("wasm") => "application/wasm",
+                            Some("json") => "application/json; charset=utf-8",
+                            Some("map") => "application/json; charset=utf-8",
+                            _ => "application/octet-stream",
+                        };
+                        log::debug!("Static: serving {} for request {}", alt_path.display(), req_path);
+                        return Some((bytes, ct));
+                    }
+                }
+            }
+
+            // Legacy favicon alias
+            if rel == "_app/zeroclaw-trans.png" {
+                let logo_path = base.join("logo.png");
+                if let Ok(meta) = tokio::fs::metadata(&logo_path).await {
+                    if meta.is_file() {
+                        if let Ok(bytes) = tokio::fs::read(&logo_path).await {
+                            log::debug!("Static: serving {} for request {}", logo_path.display(), req_path);
+                            return Some((bytes, "image/png"));
+                        }
+                    }
+                }
+            }
+        }
+
+        // SPA fallback: if index.html exists, serve it for client-side routes
+        let index_path = base.join("index.html");
+        if let Ok(meta) = tokio::fs::metadata(&index_path).await {
+            if meta.is_file() {
+                if let Ok(bytes) = tokio::fs::read(&index_path).await {
+                    log::debug!("Static: serving index.html for request {}", req_path);
+                    return Some((bytes, "text/html; charset=utf-8"));
+                }
+            }
+        }
+
+        None
+    }
+
     let listener = TcpListener::bind(addr).await?;
     log::info!("Gateway listening on http://{}", addr);
 
@@ -107,23 +256,166 @@ pub async fn run(
         let log_tx_conn = log_tx.clone();
         let thought_tx_conn = thought_tx.clone();
         let resolve_repo_path_conn = resolve_repo_path.clone();
+        // Provide the HERMA_ROOT value to connections so static files can be
+        // served from an absolute path: ${HERMA_ROOT}/web/dist
+        let herma_root_conn = repo_root.clone();
+        let pairing_state_conn = pairing_state.clone();
+        let pairing_file_conn = pairing_file.clone();
+
+        let pairing_state_value = pairing_state_conn.clone();
+        let pairing_file_value = pairing_file_conn.clone();
 
         let svc = service_fn(move |req: Request<Body>| {
             let tx_req = tx_conn.clone();
             let log_tx_req = log_tx_conn.clone();
             let thought_tx_req = thought_tx_conn.clone();
             let resolve_repo_path = resolve_repo_path_conn.clone();
+            let herma_root = herma_root_conn.clone();
+            let pairing_state_req = pairing_state_value.clone();
+            let pairing_file_req = pairing_file_value.clone();
             async move {
-                match (req.method(), req.uri().path()) {
-                    (&Method::GET, "/") => {
-                        // Prefer serving the built web UI if present on disk (web/dist/index.html)
-                        let index_pstr = (resolve_repo_path)("/home/user/goldclaw/web/dist/index.html");
-                        let index_path = std::path::Path::new(&index_pstr);
+                // Verbose logging: print every incoming request method, path and query
+                let q = req.uri().query().map(|s| format!("?{}", s)).unwrap_or_default();
+                log::debug!("Incoming request: {} {}{}", req.method(), req.uri().path(), q);
+
+                // Respond to CORS preflight requests early with permissive headers
+                if req.method() == &Method::OPTIONS {
+                    let mut res = Response::new(Body::empty());
+                    add_cors_headers(&mut res);
+                    return Ok::<_, hyper::Error>(res);
+                }
+
+                // Normalize incoming API prefix to support both `/api/*` and `/api/v1/*`
+                let mut normalized_path = req.uri().path().to_string();
+                if normalized_path.starts_with("/api/v1/") {
+                    normalized_path = normalized_path.replacen("/api/v1", "/api", 1);
+                }
+
+                match (req.method(), normalized_path.as_str()) {
+                    // Public pairing code endpoint used by the SPA
+                    (&Method::GET, "/pair/code") => {
+                        let ps = pairing_state_req.clone();
+                        let guard = ps.lock().await;
+                        // Only require pairing if there is no token present.
+                        let (pairing_code, pairing_required) = if let Some((code, token_opt)) = &*guard {
+                            let req = token_opt.is_none();
+                            (serde_json::Value::String(code.clone()), serde_json::Value::Bool(req))
+                        } else {
+                            (serde_json::Value::Null, serde_json::Value::Bool(true))
+                        };
+                        let body = serde_json::json!({"pairing_code": pairing_code, "pairing_required": pairing_required});
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        return Ok::<_, hyper::Error>(res);
+                    }
+
+                    // POST /pair with header X-Pairing-Code - exchange for token
+                    (&Method::POST, "/pair") => {
+                        // Expect header X-Pairing-Code
+                        let code_header = req.headers().get("X-Pairing-Code");
+                        if code_header.is_none() {
+                            let mut bad = Response::new(Body::from("Missing X-Pairing-Code header"));
+                            *bad.status_mut() = StatusCode::BAD_REQUEST;
+                            add_cors_headers(&mut bad);
+                            return Ok::<_, hyper::Error>(bad);
+                        }
+                        let code_str = match code_header.unwrap().to_str() {
+                            Ok(s) => s.to_string(),
+                            Err(_) => {
+                                let mut bad = Response::new(Body::from("Invalid X-Pairing-Code header"));
+                                *bad.status_mut() = StatusCode::BAD_REQUEST;
+                                add_cors_headers(&mut bad);
+                                return Ok::<_, hyper::Error>(bad);
+                            }
+                        };
+
+                        // Validate against pairing state
+                        let mut guard = pairing_state_req.lock().await;
+                        if let Some((stored_code, _token)) = guard.as_ref() {
+                            if stored_code != &code_str {
+                                let mut unauthorized = Response::new(Body::from("Invalid pairing code"));
+                                *unauthorized.status_mut() = StatusCode::UNAUTHORIZED;
+                                add_cors_headers(&mut unauthorized);
+                                return Ok::<_, hyper::Error>(unauthorized);
+                            }
+
+                            // Code matches: generate token
+                            let token = uuid::Uuid::new_v4().to_string();
+                            let stored_clone = stored_code.clone();
+                            *guard = Some((stored_clone.clone(), Some(token.clone())));
+
+                            // Persist pairing file
+                            let pairing_json = serde_json::json!({"pairing_code": stored_clone, "token": token});
+                            if let Err(e) = tokio::fs::write(&pairing_file_req, pairing_json.to_string()).await {
+                                log::warn!("Failed to persist pairing file: {}", e);
+                            }
+
+                            let mut res = Response::new(Body::from(serde_json::json!({"token": guard.as_ref().and_then(|(_, t)| t.clone()).unwrap_or_default()}).to_string()));
+                            res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                            add_cors_headers(&mut res);
+                            return Ok::<_, hyper::Error>(res);
+                        } else {
+                            let mut unauthorized = Response::new(Body::from("No active pairing code"));
+                            *unauthorized.status_mut() = StatusCode::UNAUTHORIZED;
+                            add_cors_headers(&mut unauthorized);
+                            return Ok::<_, hyper::Error>(unauthorized);
+                        }
+                    }
+
+                    // Initiate pairing: generate a 6-digit code and return it
+                    (&Method::POST, "/api/pairing/initiate") => {
+                        // Generate simple 6-digit numeric code based on time
+                        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+                        let code = format!("{:06}", (now % 1_000_000));
+                        let mut guard = pairing_state_req.lock().await;
+                        *guard = Some((code.clone(), None));
+
+                        // Persist pairing file (token empty until exchanged)
+                        let pairing_json = serde_json::json!({"pairing_code": code});
+                        if let Err(e) = tokio::fs::write(&pairing_file_req, pairing_json.to_string()).await {
+                            log::warn!("Failed to persist pairing file: {}", e);
+                        }
+
+                        let mut res = Response::new(Body::from(serde_json::json!({"pairing_code": code}).to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        return Ok::<_, hyper::Error>(res);
+                    }
+                    // Explicit SPA route mappings for client-side dashboard routes.
+                    (&Method::GET, p) if p == "/dashboard" || p.starts_with("/dashboard/") ||
+                                       p == "/tools" || p.starts_with("/tools/") ||
+                                       p == "/cron" || p.starts_with("/cron/") ||
+                                       p == "/integrations" || p.starts_with("/integrations/") => {
+                        // Serve index.html from ${HERMA_ROOT}/web/dist if present,
+                        // otherwise fall back to the embedded index.
+                        let index_str = format!("{}/web/dist/index.html", &*herma_root);
+                        let index_path = std::path::Path::new(&index_str);
                         if let Ok(meta) = tokio::fs::metadata(index_path).await {
                             if meta.is_file() {
-                                if let Ok(bytes) = tokio::fs::read(&index_path).await {
+                                if let Ok(bytes) = tokio::fs::read(index_path).await {
                                     let mut res = Response::new(Body::from(bytes));
                                     res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
+                                    add_cors_headers(&mut res);
+                                    return Ok::<_, hyper::Error>(res);
+                                }
+                            }
+                        }
+
+                        // Fallback to embedded index
+                        Ok::<_, hyper::Error>(Response::new(Body::from(INDEX_HTML)))
+                    }
+                    (&Method::GET, "/") => {
+                        // Serve index.html from ${HERMA_ROOT}/web/dist if present,
+                        // otherwise fall back to the embedded index.
+                        let index_str = format!("{}/web/dist/index.html", &*herma_root);
+                        let index_path = std::path::Path::new(&index_str);
+                        if let Ok(meta) = tokio::fs::metadata(index_path).await {
+                            if meta.is_file() {
+                                if let Ok(bytes) = tokio::fs::read(index_path).await {
+                                    let mut res = Response::new(Body::from(bytes));
+                                    res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("text/html; charset=utf-8"));
+                                    add_cors_headers(&mut res);
                                     return Ok::<_, hyper::Error>(res);
                                 }
                             }
@@ -133,13 +425,41 @@ pub async fn run(
                         Ok::<_, hyper::Error>(Response::new(Body::from(INDEX_HTML)))
                     }
                     (&Method::GET, "/styles.css") => {
+                        // Prefer disk-built stylesheet if present
+                        let styles_str = format!("{}/web/dist/styles.css", &*herma_root);
+                        let styles_path = std::path::Path::new(&styles_str);
+                        if let Ok(meta) = tokio::fs::metadata(styles_path).await {
+                            if meta.is_file() {
+                                if let Ok(bytes) = tokio::fs::read(styles_path).await {
+                                    let mut res = Response::new(Body::from(bytes));
+                                    res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("text/css; charset=utf-8"));
+                                    add_cors_headers(&mut res);
+                                    return Ok::<_, hyper::Error>(res);
+                                }
+                            }
+                        }
                         let mut res = Response::new(Body::from(STYLES_CSS));
                         res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("text/css; charset=utf-8"));
+                        add_cors_headers(&mut res);
                         Ok(res)
                     }
                     (&Method::GET, "/app.js") => {
+                        // Prefer disk-built app bundle if present
+                        let app_str = format!("{}/web/dist/app.js", &*herma_root);
+                        let app_path = std::path::Path::new(&app_str);
+                        if let Ok(meta) = tokio::fs::metadata(app_path).await {
+                            if meta.is_file() {
+                                if let Ok(bytes) = tokio::fs::read(app_path).await {
+                                    let mut res = Response::new(Body::from(bytes));
+                                    res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/javascript; charset=utf-8"));
+                                    add_cors_headers(&mut res);
+                                    return Ok::<_, hyper::Error>(res);
+                                }
+                            }
+                        }
                         let mut res = Response::new(Body::from(APP_JS));
                         res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/javascript; charset=utf-8"));
+                        add_cors_headers(&mut res);
                         Ok(res)
                     }
                     (&Method::GET, "/logs") => {
@@ -172,6 +492,7 @@ pub async fn run(
                         let mut res = Response::new(body);
                         res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("text/event-stream"));
                         res.headers_mut().insert(hyper::header::CACHE_CONTROL, hyper::header::HeaderValue::from_static("no-cache"));
+                        add_cors_headers(&mut res);
                         Ok(res)
                     }
                     // SSE audit stream: real-time Hermes thought/action events
@@ -222,48 +543,70 @@ pub async fn run(
                         let mut res = Response::new(body);
                         res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("text/event-stream"));
                         res.headers_mut().insert(hyper::header::CACHE_CONTROL, hyper::header::HeaderValue::from_static("no-cache"));
+                        add_cors_headers(&mut res);
                         Ok(res)
                     }
                     (&Method::GET, "/api/system/health") => {
                         // Health check: ollama socket, hermes (local), memory, external IP
                         let mut health = serde_json::Map::new();
 
-                        // Check Ollama and probe model VRAM state via HTTP /api/show
+                        // Check Ollama and probe model VRAM state via HTTP /api/show with retries
                         let client = reqwest::Client::new();
                         let mut vram_loaded = false;
                         let mut model_name = serde_json::Value::String("".to_string());
-                        match client.post("http://127.0.0.1:11434/api/show").json(&serde_json::json!({"model":"gemma-4-uncensored"})).send().await {
-                            Ok(resp) => {
-                                if let Ok(j) = resp.json::<serde_json::Value>().await {
-                                    // Try common shapes
-                                    if let Some(loaded) = j.get("vram").and_then(|v| v.get("loaded")).and_then(|b| b.as_bool()) {
-                                        vram_loaded = loaded;
-                                    }
-                                    if vram_loaded == false {
-                                        // try top-level `loaded` or models list
-                                        if let Some(b) = j.get("loaded").and_then(|b| b.as_bool()) { vram_loaded = b }
-                                        if let Some(models) = j.get("models").and_then(|m| m.as_array()) {
-                                            for entry in models {
-                                                if entry.get("name").and_then(|n| n.as_str()) == Some("gemma-4-uncensored") {
-                                                    if let Some(ld) = entry.get("loaded").and_then(|b| b.as_bool()) {
-                                                        vram_loaded = ld;
-                                                    }
-                                                    if let Some(nm) = entry.get("name").and_then(|n| n.as_str()) {
-                                                        model_name = serde_json::Value::String(nm.to_string());
+                        let mut ollama_ok = false;
+                        let mut last_err: Option<String> = None;
+
+                        for attempt in 1..=3 {
+                            match client.post("http://127.0.0.1:11434/api/show").json(&serde_json::json!({"model":"gemma-4-uncensored"})).send().await {
+                                Ok(resp) => {
+                                    if let Ok(j) = resp.json::<serde_json::Value>().await {
+                                        // Try common shapes
+                                        if let Some(loaded) = j.get("vram").and_then(|v| v.get("loaded")).and_then(|b| b.as_bool()) {
+                                            vram_loaded = loaded;
+                                        }
+                                        if vram_loaded == false {
+                                            // try top-level `loaded` or models list
+                                            if let Some(b) = j.get("loaded").and_then(|b| b.as_bool()) { vram_loaded = b }
+                                            if let Some(models) = j.get("models").and_then(|m| m.as_array()) {
+                                                for entry in models {
+                                                    if entry.get("name").and_then(|n| n.as_str()) == Some("gemma-4-uncensored") {
+                                                        if let Some(ld) = entry.get("loaded").and_then(|b| b.as_bool()) {
+                                                            vram_loaded = ld;
+                                                        }
+                                                        if let Some(nm) = entry.get("name").and_then(|n| n.as_str()) {
+                                                            model_name = serde_json::Value::String(nm.to_string());
+                                                        }
                                                     }
                                                 }
                                             }
+                                        } else {
+                                            if let Some(nm) = j.get("model").and_then(|m| m.as_str()) { model_name = serde_json::Value::String(nm.to_string()); }
                                         }
-                                    } else {
-                                        if let Some(nm) = j.get("model").and_then(|m| m.as_str()) { model_name = serde_json::Value::String(nm.to_string()); }
+                                    }
+                                    ollama_ok = true;
+                                    break;
+                                }
+                                Err(e) => {
+                                    last_err = Some(format!("{}", e));
+                                    log::warn!("Ollama probe attempt {} failed: {}", attempt, last_err.as_ref().unwrap_or(&"unknown".to_string()));
+                                    if attempt < 3 {
+                                        let backoff = std::time::Duration::from_millis(200 * attempt as u64);
+                                        tokio::time::sleep(backoff).await;
+                                        continue;
                                     }
                                 }
-                                health.insert("ollama".to_string(), serde_json::Value::Bool(true));
                             }
-                            Err(_) => {
-                                // Fallback to TCP connect indicator
-                                let ollama_ok = tokio::net::TcpStream::connect(("127.0.0.1", 11434)).await.is_ok();
-                                health.insert("ollama".to_string(), serde_json::Value::Bool(ollama_ok));
+                        }
+
+                        if ollama_ok {
+                            health.insert("ollama".to_string(), serde_json::Value::Bool(true));
+                        } else {
+                            // Final fallback: TCP connect indicator
+                            let tcp_ok = tokio::net::TcpStream::connect(("127.0.0.1", 11434)).await.is_ok();
+                            health.insert("ollama".to_string(), serde_json::Value::Bool(tcp_ok));
+                            if !tcp_ok {
+                                if let Some(e) = last_err { log::warn!("Ollama health probe final failure: {}", e); }
                             }
                         }
 
@@ -309,6 +652,7 @@ pub async fn run(
                         let body = serde_json::Value::Object(health);
                         let mut res = Response::new(Body::from(body.to_string()));
                         res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
                         Ok(res)
                     }
                     (&Method::POST, "/api/system/reboot") => {
@@ -344,7 +688,8 @@ pub async fn run(
                                 Err(e) => format!("fallback error: {}", e),
                             }
                         };
-                        let res = Response::new(Body::from(out));
+                        let mut res = Response::new(Body::from(out));
+                        add_cors_headers(&mut res);
                         Ok(res)
                     }
                     (&Method::POST, "/api/command") => {
@@ -375,11 +720,13 @@ pub async fn run(
                                 let body = serde_json::json!({"status":"ok","id": id});
                                 let mut res = Response::new(Body::from(body.to_string()));
                                 res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                                add_cors_headers(&mut res);
                                 Ok(res)
                             }
                             Err(_) => {
                                 let mut bad = Response::new(Body::from("Invalid JSON"));
                                 *bad.status_mut() = StatusCode::BAD_REQUEST;
+                                add_cors_headers(&mut bad);
                                 Ok(bad)
                             }
                         }
@@ -452,6 +799,39 @@ pub async fn run(
 
                         let body = serde_json::Value::Object(doc);
                         let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        return Ok::<_, hyper::Error>(res);
+                    }
+
+                    (&Method::GET, "/api/status") => {
+                        // Minimal status endpoint used by the frontend on startup.
+                        let uptime_seconds = match tokio::fs::read_to_string("/proc/uptime").await {
+                            Ok(s) => s.split_whitespace().next().and_then(|sec| sec.parse::<f64>().ok()).unwrap_or(0.0),
+                            Err(_) => 0.0,
+                        };
+
+                        // For local development, always report paired to bypass pairing gate.
+                        let paired = true;
+
+                        let status_json = serde_json::json!({
+                            "provider": serde_json::Value::Null,
+                            "model": "",
+                            "temperature": 0,
+                            "uptime_seconds": uptime_seconds,
+                            "gateway_port": 42617,
+                            "locale": "en",
+                            "memory_backend": "lancedb",
+                            "paired": paired,
+                            "channels": serde_json::json!({}),
+                            "health": serde_json::json!({
+                                "pid": std::process::id(),
+                                "updated_at": "",
+                                "uptime_seconds": uptime_seconds,
+                                "components": serde_json::json!({})
+                            })
+                        });
+
+                        let mut res = Response::new(Body::from(status_json.to_string()));
                         res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
                         return Ok::<_, hyper::Error>(res);
                     }
@@ -812,89 +1192,20 @@ pub async fn run(
                     }
 
                     _ => {
-                        // If this is a GET request, try to serve static files from
-                        // the built web output at /home/user/goldclaw/web/dist.
+                        // If this is a GET request, try to serve static files from the built web output.
                         if req.method() == &Method::GET {
-                            let base_pstr = resolve_repo_path("/home/user/goldclaw/web/dist");
-                            let base = std::path::Path::new(&base_pstr);
-                            let req_path = req.uri().path();
-                            let rel = if req_path == "/" { "index.html" } else { req_path.trim_start_matches('/') };
-
-                            // Try the exact path first
-                            let fs_path = base.join(rel);
-                            if let Ok(meta) = tokio::fs::metadata(&fs_path).await {
-                                if meta.is_file() {
-                                    if let Ok(bytes) = tokio::fs::read(&fs_path).await {
-                                        let mut res = Response::new(Body::from(bytes));
-                                        if let Some(ext) = fs_path.extension().and_then(|s| s.to_str()) {
-                                            let ct = match ext {
-                                                "html" => "text/html; charset=utf-8",
-                                                "css" => "text/css; charset=utf-8",
-                                                "js" => "application/javascript; charset=utf-8",
-                                                "png" => "image/png",
-                                                "jpg" | "jpeg" => "image/jpeg",
-                                                "svg" => "image/svg+xml",
-                                                "wasm" => "application/wasm",
-                                                "json" => "application/json; charset=utf-8",
-                                                "map" => "application/json; charset=utf-8",
-                                                _ => "application/octet-stream",
-                                            };
-                                            res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static(ct));
-                                        }
-                                        return Ok(res);
-                                    }
-                                }
+                            if let Some((bytes, ct)) = try_serve_static_file(&*herma_root, req.uri().path()).await {
+                                let mut res = Response::new(Body::from(bytes));
+                                res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static(ct));
+                                add_cors_headers(&mut res);
+                                return Ok::<_, hyper::Error>(res);
                             }
-
-                            // Compatibility fallback: some SPA builds reference assets under "/_app/..."
-                            // while the dist output places them at the repo root (e.g. "/assets/...").
-                            // If the request starts with "_app/", try serving the file with that
-                            // segment removed (drop the `_app` prefix).
-                            if rel.starts_with("_app/") {
-                                let without_prefix = &rel["_app/".len()..];
-                                let alt_path = base.join(without_prefix);
-                                if let Ok(meta) = tokio::fs::metadata(&alt_path).await {
-                                    if meta.is_file() {
-                                        if let Ok(bytes) = tokio::fs::read(&alt_path).await {
-                                            let mut res = Response::new(Body::from(bytes));
-                                            if let Some(ext) = alt_path.extension().and_then(|s| s.to_str()) {
-                                                let ct = match ext {
-                                                    "html" => "text/html; charset=utf-8",
-                                                    "css" => "text/css; charset=utf-8",
-                                                    "js" => "application/javascript; charset=utf-8",
-                                                    "png" => "image/png",
-                                                    "jpg" | "jpeg" => "image/jpeg",
-                                                    "svg" => "image/svg+xml",
-                                                    "wasm" => "application/wasm",
-                                                    "json" => "application/json; charset=utf-8",
-                                                    "map" => "application/json; charset=utf-8",
-                                                    _ => "application/octet-stream",
-                                                };
-                                                res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static(ct));
-                                            }
-                                            return Ok(res);
-                                        }
-                                    }
-                                }
-
-                                // special-case legacy favicon reference
-                                if rel == "_app/zeroclaw-trans.png" {
-                                    let logo_path = base.join("logo.png");
-                                    if let Ok(meta) = tokio::fs::metadata(&logo_path).await {
-                                        if meta.is_file() {
-                                            if let Ok(bytes) = tokio::fs::read(&logo_path).await {
-                                                let mut res = Response::new(Body::from(bytes));
-                                                res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("image/png"));
-                                                return Ok(res);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        }
                         }
 
                         let mut not_found = Response::default();
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
+                        add_cors_headers(&mut not_found);
                         Ok(not_found)
                     }
                 }

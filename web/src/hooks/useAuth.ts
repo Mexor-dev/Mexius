@@ -47,8 +47,10 @@ export interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [token, setTokenState] = useState<string | null>(readToken);
   const [authenticated, setAuthenticated] = useState<boolean>(checkAuth);
-  const [requiresPairing, setRequiresPairing] = useState<boolean>(true);
-  const [loading, setLoading] = useState<boolean>(!checkAuth());
+  // Disable pairing gate by default for local development so the SPA
+  // does not block when there is no stored session/token.
+  const [requiresPairing, setRequiresPairing] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
 
   // On mount: check if server requires pairing at all
   useEffect(() => {
@@ -76,7 +78,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Keep state in sync if localStorage is changed in another tab
   useEffect(() => {
     const handler = (e: StorageEvent) => {
-      if (e.key === 'zeroclaw_token') {
+      if (e.key === 'herma_token') {
         const t = readToken();
         setTokenState(t);
         setAuthenticated(t !== null && t.length > 0);

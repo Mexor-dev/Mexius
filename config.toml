@@ -1,0 +1,11 @@
+[gateway]
+port = 42617
+host = "0.0.0.0"
+
+[memory]
+database_path = "/home/user/.herma/lancedb_store"
+zero_latency = true
+
+[agent]
+framework = "hermes"
+foundation = "zeroclaw"

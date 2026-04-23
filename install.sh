@@ -1,22 +1,41 @@
 #!/bin/bash
 set -eu
 
-# Goldclaw Master Installer (Dynamic Pathing)
+# Herma One-Click Installer
 REQUIRED_PACKAGES="libssl-dev pkg-config build-essential ca-certificates curl python3"
 
-# Detect OS and install dependencies
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo "Repo root: $REPO_ROOT"
+
+cd "$REPO_ROOT"
+
+# Ensure we have a Linux-native npm (not Windows /mnt/c) — abort if Windows npm detected
+if command -v npm >/dev/null 2>&1; then
+  NPM_PATH=$(readlink -f "$(command -v npm)" || command -v npm)
+  if echo "$NPM_PATH" | grep -q "/mnt/c/"; then
+    echo "Detected Windows-mounted npm at $NPM_PATH. This installer requires a native Linux npm in WSL." >&2
+    echo "Please install Node.js (preferably via nvm) inside WSL and re-run this script." >&2
+    exit 1
+  fi
+fi
+
+# If npm is missing, attempt to install nodejs/npm on Debian/Ubuntu
+if ! command -v npm >/dev/null 2>&1; then
+  if [ -f /etc/debian_version ]; then
+    echo "npm not found. Installing nodejs and npm via apt..."
+    sudo apt-get update
+    sudo apt-get install -y nodejs npm
+  else
+    echo "npm not found. Please install Node.js inside this environment and re-run the installer." >&2
+    exit 1
+  fi
+fi
+
+# Install system deps on Debian/Ubuntu
 if [ -f /etc/debian_version ]; then
   echo "Detected Debian/Ubuntu. Installing dependencies..."
   sudo apt-get update
   sudo apt-get install -y $REQUIRED_PACKAGES
-elif [ -f /etc/redhat-release ]; then
-  echo "Detected RedHat/CentOS. Installing dependencies..."
-  sudo yum install -y openssl-devel pkgconfig make gcc ca-certificates curl python3
-elif [ "$(uname)" = "Darwin" ]; then
-  echo "Detected macOS. Installing dependencies..."
-  brew install openssl pkg-config coreutils curl python3
-else
-  echo "Unsupported OS. Please install dependencies manually: $REQUIRED_PACKAGES"
 fi
 
 # Install Rust if missing
@@ -26,123 +45,46 @@ if ! command -v cargo >/dev/null 2>&1; then
   . "$HOME/.cargo/env"
 fi
 
-
-# --- Goldclaw Cold Start Logic ---
-
-# If not in a git repo, clone it
-if [ ! -d .git ]; then
-  echo "No .git directory found. Cloning Goldclaw..."
-  cd ~
-  if [ -d Goldclaw ]; then
-    echo "Goldclaw directory already exists. Using it."
-    cd Goldclaw
-    git pull
+# Build UI (Node)
+if [ -d "$REPO_ROOT/web" ]; then
+  echo "Building Web UI..."
+  pushd "$REPO_ROOT/web" >/dev/null
+  if [ -f package-lock.json ]; then
+    npm ci
   else
-    git clone https://github.com/Mexor-dev/Goldclaw.git
-    cd Goldclaw
+    npm install
   fi
+  npm run build
+  popd >/dev/null
 fi
 
-# Detect repo root
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "Repo root: $REPO_ROOT"
+# Build Gateway (Rust)
+echo "Building herma-gateway (Rust release)..."
+cargo build -p goldclaw-api --release
 
-# Build
-cd "$REPO_ROOT"
-  echo "Building herma-gateway binary..."
-  cargo build --release --manifest-path "$REPO_ROOT/crates/goldclaw-api/Cargo.toml" --bin herma-gateway
+# Ensure backend storage directories exist
+echo "Initializing Herma storage directories..."
+mkdir -p "$HOME/.herma/lancedb_store"
 
-# Fail-proof binary discovery (search entire repo root)
-BINARY_PATH=$(find "$REPO_ROOT" -type f -name "herma-gateway" -executable | head -n 1)
-if [ -z "$BINARY_PATH" ] || [ ! -f "$BINARY_PATH" ]; then
-  echo "Error: goldclaw binary not found. Build may have failed."
-  echo "Current directory: $(pwd)"
-  echo "Listing target/release contents:"
-  ls -l "$REPO_ROOT/target/release" || echo "(target/release missing)"
+# Locate built binary
+BINARY_PATH=$(find "$REPO_ROOT/target/release" -maxdepth 1 -type f -executable -name "herma-gateway" | head -n 1 || true)
+if [ -z "$BINARY_PATH" ]; then
+  echo "Error: herma-gateway binary not found in target/release. Build may have failed." >&2
+  ls -l "$REPO_ROOT/target/release" || true
   exit 1
 fi
+
 echo "Discovered binary: $BINARY_PATH"
-EXEC_PATH="$BINARY_PATH"
-
-# Permission force
 chmod +x "$BINARY_PATH"
-chmod +x "$REPO_ROOT/install.sh"
 
-# Symlink or PATH logic
+# Optionally install symlink
 if [ -w /usr/local/bin ]; then
   sudo ln -sf "$BINARY_PATH" /usr/local/bin/herma-gateway
   echo "Symlinked /usr/local/bin/herma-gateway -> $BINARY_PATH"
 else
-  echo "No write access to /usr/local/bin. Adding target dir to PATH in ~/.bashrc."
-  GOLDCLAW_DIR=$(dirname "$BINARY_PATH")
-  if ! grep -q "$GOLDCLAW_DIR" ~/.bashrc; then
-    echo "export PATH=\"$GOLDCLAW_DIR:\$PATH\"" >> ~/.bashrc
-    echo "Added $GOLDCLAW_DIR to PATH in ~/.bashrc."
-  fi
+  echo "No write access to /usr/local/bin. You can run the binary directly: $BINARY_PATH"
 fi
 
-# Embedded dashboard build (Rust-Embed)
-echo "Embedding WebUI dist folder..."
-# (Assume src/webui.rs uses rust-embed and is already set up)
-
-
-# Enable linger so user services can keep running after logout/terminal close
-if command -v loginctl >/dev/null 2>&1; then
-  echo "Enabling linger for $(whoami)"
-  sudo loginctl enable-linger $(whoami) || true
-fi
-
-# Create user-level systemd service for Goldclaw
-SERVICE_PATH="$HOME/.config/systemd/user/herma-gateway.service"
-EXEC_PATH="/usr/local/bin/herma-gateway"
-if [ ! -f "$EXEC_PATH" ]; then
-  EXEC_PATH="$BINARY_PATH"
-fi
-
-mkdir -p "$HOME/.config/systemd/user"
-[ -d "$HOME/.config/systemd/user" ] || mkdir -p "$HOME/.config/systemd/user"
-echo "Writing user systemd service to $SERVICE_PATH"
-cat > "$SERVICE_PATH" <<EOF
-[Unit]
-Description=Goldclaw Entity (User Service)
-After=network.target ollama.service
-
-[Service]
-ExecStart=$BINARY_PATH start
-Restart=always
-
-[Install]
-WantedBy=default.target
-EOF
-
-echo "Reloading user systemd daemon and enabling herma-gateway.service (user)"
-systemctl --user daemon-reload || true
-systemctl --user enable --now herma-gateway.service || true
-
-# If ollama exists as a user service, enable it at boot
-if systemctl --user list-unit-files | grep -q "ollama"; then
-  echo "Enabling Ollama user service to start at boot"
-  systemctl --user enable --now ollama || true
-fi
-
-# Create a Windows boot helper script for users who want WSL priming
-if [ ! -f "$REPO_ROOT/setup-windows-boot.ps1" ]; then
-  cat > "$REPO_ROOT/setup-windows-boot.ps1" <<'PS'
-# setup-windows-boot.ps1
-# Creates a scheduled task that runs on Windows startup to prime WSL.
-# Run this from an elevated PowerShell prompt.
-
-$Distro = "Ubuntu"
-$TaskName = "Goldclaw_Boot"
-$Action = "wsl.exe -d $Distro --exec /bin/true"
-
-schtasks /Create /TN $TaskName /TR $Action /SC ONSTART /RU SYSTEM /F
-Write-Host "Scheduled task $TaskName created to prime WSL on boot."
-PS
-fi
-
-echo "Build and install complete. You can start the agent with:"
-echo "  goldclaw start"
-echo "If you want the agent to run in background and capture logs, run:"
-echo "  nohup goldclaw start > /tmp/goldclaw.log 2>&1 &"
-echo "Check logs with: tail -n 200 /tmp/goldclaw.log"
+echo "Install complete. You can start Herma with:"
+echo "  $BINARY_PATH gateway 0.0.0.0:42617"
+echo "Or via systemd user service if desired."
