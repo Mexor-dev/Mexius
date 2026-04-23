@@ -27,6 +27,9 @@ export class UnauthorizedError extends Error {
   }
 }
 
+// Default request timeout (30 s). Callers can override via options.signal.
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {},
@@ -46,7 +49,21 @@ export async function apiFetch<T = unknown>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${apiOrigin}${basePath}${path}`, { ...options, headers });
+  // Apply a default timeout if the caller did not supply an AbortSignal.
+  let signal = options.signal;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  if (!signal) {
+    const controller = new AbortController();
+    signal = controller.signal;
+    timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiOrigin}${basePath}${path}`, { ...options, headers, signal });
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 
   if (response.status === 401) {
     clearToken();
@@ -153,6 +170,17 @@ export function putConfig(toml: string): Promise<void> {
     method: 'PUT',
     headers: { 'Content-Type': 'application/toml' },
     body: toml,
+  });
+}
+
+export function getOllamaModels(): Promise<import('../types/api').OllamaModelsResponse> {
+  return apiFetch<import('../types/api').OllamaModelsResponse>('/api/v1/ollama/models');
+}
+
+export function pullOllamaModel(model: string): Promise<import('../types/api').OllamaPullResponse> {
+  return apiFetch<import('../types/api').OllamaPullResponse>('/api/v1/ollama/pull', {
+    method: 'POST',
+    body: JSON.stringify({ model }),
   });
 }
 
@@ -340,4 +368,43 @@ export function getCliTools(): Promise<CliTool[]> {
   return apiFetch<CliTool[] | { cli_tools: CliTool[] }>('/api/cli-tools').then((data) =>
     unwrapField(data, 'cli_tools'),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Hardware telemetry
+// ---------------------------------------------------------------------------
+
+export function getHardware(): Promise<import('../types/api').HardwareTelemetry> {
+  return apiFetch('/api/v1/hardware');
+}
+
+// ---------------------------------------------------------------------------
+// ZeroClaw tool status
+// ---------------------------------------------------------------------------
+
+export function getZeroClawTools(): Promise<import('../types/api').ZeroClawTool[]> {
+  return apiFetch('/api/v1/tools/status');
+}
+
+// ---------------------------------------------------------------------------
+// Soul editor
+// ---------------------------------------------------------------------------
+
+export function getSoul(): Promise<string> {
+  return apiFetch<{ content: string }>('/api/v1/soul').then((d) => d.content);
+}
+
+export function saveSoul(content: string): Promise<void> {
+  return apiFetch<void>('/api/v1/soul', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Logs snapshot for telemetry bootstrap
+// ---------------------------------------------------------------------------
+
+export function getLogs(limit = 200): Promise<{ lines: string[]; count: number }> {
+  return apiFetch<{ lines: string[]; count: number }>(`/api/v1/logs?limit=${limit}`);
 }

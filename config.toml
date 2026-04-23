@@ -1,3 +1,6 @@
+default_provider = "ollama"
+default_model = "fredrezones55/Gemma-4-Uncensored-HauhauCS-Aggressive:e2b-SCN"
+
 [gateway]
 port = 42617
 host = "0.0.0.0"

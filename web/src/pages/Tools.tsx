@@ -6,27 +6,66 @@ import {
   ChevronRight,
   Terminal,
   Package,
+  GitBranch,
+  FolderOpen,
+  Brain,
+  Globe,
+  Shield,
 } from 'lucide-react';
-import type { ToolSpec, CliTool } from '@/types/api';
-import { getTools, getCliTools } from '@/lib/api';
+import type { ToolSpec, CliTool, ZeroClawTool } from '@/types/api';
+import { getTools, getCliTools, getZeroClawTools } from '@/lib/api';
 import { t } from '@/lib/i18n';
+
+// icon lookup for ZeroClaw tools
+function zeroIcon(iconName: string | undefined) {
+  switch ((iconName ?? '').toLowerCase()) {
+    case 'terminal':   return Terminal;
+    case 'gitbranch':  return GitBranch;
+    case 'folder':     return FolderOpen;
+    case 'brain':      return Brain;
+    case 'globe':      return Globe;
+    default:           return Wrench;
+  }
+}
 
 export default function Tools() {
   const [tools, setTools] = useState<ToolSpec[]>([]);
   const [cliTools, setCliTools] = useState<CliTool[]>([]);
+  const [zeroTools, setZeroTools] = useState<ZeroClawTool[]>([]);
   const [search, setSearch] = useState('');
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
   const [agentSectionOpen, setAgentSectionOpen] = useState(true);
   const [cliSectionOpen, setCliSectionOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [toolAuthModes, setToolAuthModes] = useState<Record<string, 'user' | 'autonomous'>>({});
 
   useEffect(() => {
-    Promise.all([getTools(), getCliTools()])
-      .then(([t, c]) => { setTools(t); setCliTools(c); })
+    Promise.all([getTools(), getCliTools(), getZeroClawTools()])
+      .then(([t, c, z]) => { setTools(t); setCliTools(c); setZeroTools(z); })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('herma.toolAuthModes');
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, 'user' | 'autonomous'>;
+        setToolAuthModes(parsed);
+      }
+    } catch {
+      // ignore parse errors and use defaults
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('herma.toolAuthModes', JSON.stringify(toolAuthModes));
+    } catch {
+      // storage may be unavailable (private mode)
+    }
+  }, [toolAuthModes]);
 
   const filtered = tools.filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -194,6 +233,85 @@ export default function Tools() {
                 </tbody>
               </table>
             </div>}
+          </div>
+        </div>
+      )}
+
+      {/* ZeroClaw Embedded Tools */}
+      {zeroTools.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="h-4 w-4" style={{ color: '#a78bfa' }} />
+            <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'var(--pc-text-primary)' }}>
+              ZeroClaw Embedded Tools
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger-children">
+            {zeroTools.map((tool) => {
+              const Icon = zeroIcon(tool.icon);
+              const statusColor = tool.locked
+                ? '#fbbf24'
+                : tool.available ? '#34d399' : '#f87171';
+              const statusLabel = tool.locked
+                ? 'Locked'
+                : tool.available ? 'OK' : 'Error';
+              const statusBg = tool.locked
+                ? 'rgba(251,191,36,0.1)'
+                : tool.available ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.1)';
+              const statusBorder = tool.locked
+                ? 'rgba(251,191,36,0.3)'
+                : tool.available ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.3)';
+              const mode = toolAuthModes[tool.tool_id] ?? (tool.locked ? 'user' : 'autonomous');
+
+              return (
+                <div key={tool.tool_id} className="card p-5 animate-slide-in-up">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-2xl" style={{ background: 'rgba(167,139,250,0.1)', color: '#a78bfa' }}>
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--pc-text-primary)' }}>{tool.name}</p>
+                        <p className="text-xs font-mono" style={{ color: 'var(--pc-text-faint)' }}>{tool.tool_id}</p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full"
+                      style={{ background: statusBg, color: statusColor, border: `1px solid ${statusBorder}` }}>
+                      {statusLabel}
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed" style={{ color: 'var(--pc-text-muted)' }}>
+                    {tool.description}
+                  </p>
+
+                  <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--pc-border)' }}>
+                    <p className="text-[10px] uppercase tracking-wider mb-2" style={{ color: 'var(--pc-text-faint)' }}>
+                      Authorization Mode
+                    </p>
+                    <div className="inline-flex rounded-lg p-1" style={{ background: 'var(--pc-bg-elevated)', border: '1px solid var(--pc-border)' }}>
+                      <button
+                        onClick={() => setToolAuthModes((prev) => ({ ...prev, [tool.tool_id]: 'user' }))}
+                        className="px-2.5 py-1 text-[11px] rounded-md transition-all"
+                        style={mode === 'user'
+                          ? { background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }
+                          : { background: 'transparent', color: 'var(--pc-text-muted)' }}
+                      >
+                        User Required
+                      </button>
+                      <button
+                        onClick={() => setToolAuthModes((prev) => ({ ...prev, [tool.tool_id]: 'autonomous' }))}
+                        className="px-2.5 py-1 text-[11px] rounded-md transition-all"
+                        style={mode === 'autonomous'
+                          ? { background: 'rgba(52,211,153,0.12)', color: '#34d399' }
+                          : { background: 'transparent', color: 'var(--pc-text-muted)' }}
+                      >
+                        Autonomous
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

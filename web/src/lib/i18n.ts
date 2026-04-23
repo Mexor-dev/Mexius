@@ -21,6 +21,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': '日志',
     'nav.doctor': '诊断',
     'nav.canvas': '画布',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': '仪表盘',
@@ -449,6 +452,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Logs',
     'nav.doctor': 'Doctor',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Dashboard',
@@ -877,6 +883,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Kayıtlar',
     'nav.doctor': 'Doktor',
     'nav.canvas': 'Tuval',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Kontrol Paneli',
@@ -1303,6 +1312,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'السجلات',
     'nav.doctor': 'التشخيص',
     'nav.canvas': 'اللوحة',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'لوحة التحكم',
@@ -1658,6 +1670,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'লগ',
     'nav.doctor': 'ডক্টর',
     'nav.canvas': 'ক্যানভাস',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'ড্যাশবোর্ড',
@@ -2013,6 +2028,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Protokoly',
     'nav.doctor': 'Diagnostika',
     'nav.canvas': 'Plátno',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Přehled',
@@ -2368,6 +2386,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Logfiler',
     'nav.doctor': 'Diagnostik',
     'nav.canvas': 'Lærred',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Dashboard',
@@ -2723,6 +2744,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Protokolle',
     'nav.doctor': 'Diagnose',
     'nav.canvas': 'Leinwand',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Dashboard',
@@ -3078,6 +3102,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Αρχεία καταγραφής',
     'nav.doctor': 'Διαγνωστικά',
     'nav.canvas': 'Καμβάς',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Πίνακας ελέγχου',
@@ -3433,6 +3460,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Registros',
     'nav.doctor': 'Diagnóstico',
     'nav.canvas': 'Lienzo',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Panel de control',
@@ -3788,6 +3818,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Lokit',
     'nav.doctor': 'Diagnostiikka',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Hallintapaneeli',
@@ -4143,6 +4176,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Journaux',
     'nav.doctor': 'Diagnostic',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Tableau de bord',
@@ -4498,6 +4534,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'יומנים',
     'nav.doctor': 'אבחון',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'לוח בקרה',
@@ -4853,6 +4892,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'लॉग',
     'nav.doctor': 'डॉक्टर',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'डैशबोर्ड',
@@ -5208,6 +5250,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Naplók',
     'nav.doctor': 'Diagnosztika',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Vezérlőpult',
@@ -5563,6 +5608,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Log',
     'nav.doctor': 'Dokter',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Dasbor',
@@ -5918,6 +5966,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Log',
     'nav.doctor': 'Diagnostica',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Pannello di controllo',
@@ -6273,6 +6324,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'ログ',
     'nav.doctor': '診断',
     'nav.canvas': 'キャンバス',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'ダッシュボード',
@@ -6628,6 +6682,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': '로그',
     'nav.doctor': '진단',
     'nav.canvas': '캔버스',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': '대시보드',
@@ -6983,6 +7040,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Logger',
     'nav.doctor': 'Diagnose',
     'nav.canvas': 'Lerret',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Dashbord',
@@ -7338,6 +7398,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Logboeken',
     'nav.doctor': 'Diagnose',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Dashboard',
@@ -7693,6 +7756,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Logi',
     'nav.doctor': 'Diagnostyka',
     'nav.canvas': 'Płótno',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Panel',
@@ -8048,6 +8114,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Logs',
     'nav.doctor': 'Diagnóstico',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Painel',
@@ -8403,6 +8472,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Jurnale',
     'nav.doctor': 'Diagnosticare',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Panou de control',
@@ -8758,6 +8830,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Журналы',
     'nav.doctor': 'Диагностика',
     'nav.canvas': 'Холст',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Панель управления',
@@ -9113,6 +9188,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Loggar',
     'nav.doctor': 'Diagnostik',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Instrumentpanel',
@@ -9468,6 +9546,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'บันทึก',
     'nav.doctor': 'วินิจฉัย',
     'nav.canvas': 'แคนวาส',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'แดชบอร์ด',
@@ -9823,6 +9904,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Mga Log',
     'nav.doctor': 'Diagnostiko',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Dashboard',
@@ -10178,6 +10262,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Журнали',
     'nav.doctor': 'Діагностика',
     'nav.canvas': 'Полотно',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Панель керування',
@@ -10533,6 +10620,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'لاگز',
     'nav.doctor': 'تشخیص',
     'nav.canvas': 'کینوس',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'ڈیش بورڈ',
@@ -10888,6 +10978,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'nav.logs': 'Nhật ký',
     'nav.doctor': 'Chẩn đoán',
     'nav.canvas': 'Canvas',
+    'nav.nexus': 'Nexus',
+    'nav.soul': 'Soul Editor',
+    'nav.telemetry': 'Telemetry',
 
     // Dashboard
     'dashboard.title': 'Bảng điều khiển',

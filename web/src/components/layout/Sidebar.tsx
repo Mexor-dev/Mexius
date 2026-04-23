@@ -12,19 +12,25 @@ import {
   Activity,
   Stethoscope,
   Monitor,
+  Sparkles,
+  Feather,
+  Zap,
 } from 'lucide-react';
 import { t } from '@/lib/i18n';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
   { to: '/agent', icon: MessageSquare, labelKey: 'nav.agent' },
+  { to: '/nexus', icon: Sparkles, labelKey: 'nav.nexus' },
   { to: '/tools', icon: Wrench, labelKey: 'nav.tools' },
   { to: '/cron', icon: Clock, labelKey: 'nav.cron' },
   { to: '/integrations', icon: Puzzle, labelKey: 'nav.integrations' },
   { to: '/memory', icon: Brain, labelKey: 'nav.memory' },
+  { to: '/soul', icon: Feather, labelKey: 'nav.soul' },
   { to: '/config', icon: Settings, labelKey: 'nav.config' },
   { to: '/cost', icon: DollarSign, labelKey: 'nav.cost' },
   { to: '/logs', icon: Activity, labelKey: 'nav.logs' },
+  { to: '/telemetry', icon: Zap, labelKey: 'nav.telemetry' },
   { to: '/doctor', icon: Stethoscope, labelKey: 'nav.doctor' },
   { to: '/canvas', icon: Monitor, labelKey: 'nav.canvas' },
 ];

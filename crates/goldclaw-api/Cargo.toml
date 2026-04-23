@@ -27,6 +27,13 @@ uuid = { version = "1", features = ["v4"] }
 parking_lot = "0.12"
 # Live memory bridge to ZeroClaw memory crate (local path)
 goldclaw_memory = { package = "goldclaw-memory", path = "../goldclaw-memory-mini" }
+# WebSocket handshake: ring (SHA-1) + base64 — both already in lock file via rustls
+ring = "0.17"
+base64 = "0.21"
+# Lattice / Species kernel (neural graft)
+lattice_kernel  = { path = "../lattice_kernel" }
+species_kernel  = { path = "../species_kernel" }
+
 
 [dev-dependencies]
 tempfile = "3"

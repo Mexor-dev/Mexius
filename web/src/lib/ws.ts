@@ -40,6 +40,8 @@ export class WebSocketClient {
   private currentDelay: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionallyClosed = false;
+  /** Messages queued while the socket is not yet open (drained on reconnect). */
+  private pendingQueue: string[] = [];
 
   public onMessage: WsMessageHandler | null = null;
   public onOpen: WsOpenHandler | null = null;
@@ -85,6 +87,11 @@ export class WebSocketClient {
 
     this.ws.onopen = () => {
       this.currentDelay = this.reconnectDelay;
+      // Drain any messages queued during reconnect
+      const queued = this.pendingQueue.splice(0);
+      for (const raw of queued) {
+        this.ws!.send(raw);
+      }
       this.onOpen?.();
     };
 
@@ -107,17 +114,21 @@ export class WebSocketClient {
     };
   }
 
-  /** Send a chat message to the agent. */
+  /** Send a chat message to the agent. Queues the message if the socket is not yet open. */
   sendMessage(content: string): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket is not connected');
+    const raw = JSON.stringify({ type: 'message', content });
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(raw);
+    } else {
+      // Queue for delivery once the connection is (re-)established
+      this.pendingQueue.push(raw);
     }
-    this.ws.send(JSON.stringify({ type: 'message', content }));
   }
 
   /** Close the connection without auto-reconnecting. */
   disconnect(): void {
     this.intentionallyClosed = true;
+    this.pendingQueue = [];
     this.clearReconnectTimer();
     if (this.ws) {
       this.ws.close();

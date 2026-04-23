@@ -6,6 +6,7 @@ mod hermes;
 mod tools;
 mod zeroclaw;
 mod gateway;
+mod lattice;
 mod memory_store;
 
 #[derive(Parser)]
@@ -88,8 +89,11 @@ async fn main() {
             let tx_for_gw = tx.clone();
             let log_tx_for_gw = log_tx.clone();
             let thought_tx_for_gw = thought_tx.clone();
+            let lattice_entity = lattice::make_entity();
+            lattice::spawn_pulse(lattice_entity.clone());
+            let lattice_entity_gw = lattice_entity.clone();
             let gateway_handle = tokio::spawn(async move {
-                if let Err(e) = gateway::run(gw_addr, tx_for_gw, log_tx_for_gw, thought_tx_for_gw).await {
+                if let Err(e) = gateway::run(gw_addr, tx_for_gw, log_tx_for_gw, thought_tx_for_gw, lattice_entity_gw).await {
                     log::error!("Gateway error: {:?}", e);
                 }
             });
@@ -152,7 +156,9 @@ async fn main() {
             let (tx, _rx) = tokio::sync::mpsc::channel::<hermes::Message>(8);
             let (log_tx, _log_rx) = tokio::sync::broadcast::channel::<String>(128);
             let (thought_tx, _thought_rx) = tokio::sync::broadcast::channel::<String>(256);
-            if let Err(e) = gateway::run(gw_addr, tx, log_tx, thought_tx).await {
+            let lattice_entity = lattice::make_entity();
+            lattice::spawn_pulse(lattice_entity.clone());
+            if let Err(e) = gateway::run(gw_addr, tx, log_tx, thought_tx, lattice_entity).await {
                 log::error!("Gateway error: {:?}", e);
             }
         }

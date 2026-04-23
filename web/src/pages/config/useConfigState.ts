@@ -78,6 +78,28 @@ export function useConfigState() {
     });
   }, []);
 
+  const updateFieldsAndSave = useCallback(async (updates: Array<{ path: string; value: unknown }>) => {
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const nextConfig = updates.reduce<Record<string, unknown>>(
+        (acc, update) => setPath(acc, update.path, update.value),
+        parsedConfig,
+      );
+      const toml = stringify(nextConfig);
+      await putConfig(toml);
+      setParsedConfig(nextConfig);
+      setRawToml(toml);
+      setDirty(false);
+      setSuccess('Configuration saved successfully');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  }, [parsedConfig]);
+
   const getField = useCallback((path: string): unknown => {
     return getPath(parsedConfig, path);
   }, [parsedConfig]);
@@ -165,6 +187,7 @@ export function useConfigState() {
     success,
     parseError,
     updateField,
+    updateFieldsAndSave,
     getField,
     switchMode,
     updateRawToml,

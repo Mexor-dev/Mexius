@@ -63,6 +63,11 @@ struct UiCommand {
     id: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct OllamaPullRequest {
+    model: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,6 +115,7 @@ pub async fn run(
     tx: mpsc::Sender<crate::hermes::Message>,
     log_tx: broadcast::Sender<String>,
     thought_tx: broadcast::Sender<String>,
+    lattice_entity: crate::lattice::SharedEntity,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Ensure Herma data directory exists (for LanceDB storage)
     let home = std::env::var("HOME").unwrap_or_else(|_| "/home/user".to_string());
@@ -154,11 +160,12 @@ pub async fn run(
     // browsers (Windows host) can connect to the WSL backend without WebSocket
     // or fetch CORS failures.
     fn add_cors_headers(res: &mut Response<Body>) {
-        use hyper::header::{ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_CREDENTIALS};
+        use hyper::header::{ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_HEADERS};
         res.headers_mut().insert(ACCESS_CONTROL_ALLOW_ORIGIN, hyper::header::HeaderValue::from_static("*"));
-        res.headers_mut().insert(ACCESS_CONTROL_ALLOW_METHODS, hyper::header::HeaderValue::from_static("GET, POST, OPTIONS"));
+        res.headers_mut().insert(ACCESS_CONTROL_ALLOW_METHODS, hyper::header::HeaderValue::from_static("GET, POST, PUT, OPTIONS"));
         res.headers_mut().insert(ACCESS_CONTROL_ALLOW_HEADERS, hyper::header::HeaderValue::from_static("Content-Type, Authorization, Upgrade"));
-        res.headers_mut().insert(ACCESS_CONTROL_ALLOW_CREDENTIALS, hyper::header::HeaderValue::from_static("true"));
+        // NOTE: credentials must NOT be "true" when Allow-Origin is "*" (RFC 6454).
+        // Removed ACCESS_CONTROL_ALLOW_CREDENTIALS to comply with the CORS spec.
     }
 
     // Helper: try to locate and read a static file for a given request path.
@@ -261,9 +268,11 @@ pub async fn run(
         let herma_root_conn = repo_root.clone();
         let pairing_state_conn = pairing_state.clone();
         let pairing_file_conn = pairing_file.clone();
+        let lattice_entity_conn = lattice_entity.clone();
 
         let pairing_state_value = pairing_state_conn.clone();
         let pairing_file_value = pairing_file_conn.clone();
+        let lattice_entity_value = lattice_entity_conn.clone();
 
         let svc = service_fn(move |req: Request<Body>| {
             let tx_req = tx_conn.clone();
@@ -273,7 +282,121 @@ pub async fn run(
             let herma_root = herma_root_conn.clone();
             let pairing_state_req = pairing_state_value.clone();
             let pairing_file_req = pairing_file_value.clone();
+            let lattice_entity_req = lattice_entity_value.clone();
             async move {
+                        fn parse_top_level_string_value(toml: &str, key: &str) -> Option<String> {
+                            let mut in_section = false;
+                            for raw_line in toml.lines() {
+                                let line = raw_line.trim();
+                                if line.is_empty() || line.starts_with('#') {
+                                    continue;
+                                }
+                                if line.starts_with('[') && line.ends_with(']') {
+                                    in_section = true;
+                                    continue;
+                                }
+                                if in_section {
+                                    continue;
+                                }
+                                if let Some((lhs, rhs)) = line.split_once('=') {
+                                    if lhs.trim() == key {
+                                        return Some(rhs.trim().trim_matches('"').to_string());
+                                    }
+                                }
+                            }
+                            None
+                        }
+
+                        fn parse_top_level_number_value(toml: &str, key: &str) -> Option<f64> {
+                            let mut in_section = false;
+                            for raw_line in toml.lines() {
+                                let line = raw_line.trim();
+                                if line.is_empty() || line.starts_with('#') {
+                                    continue;
+                                }
+                                if line.starts_with('[') && line.ends_with(']') {
+                                    in_section = true;
+                                    continue;
+                                }
+                                if in_section {
+                                    continue;
+                                }
+                                if let Some((lhs, rhs)) = line.split_once('=') {
+                                    if lhs.trim() == key {
+                                        return rhs.trim().parse::<f64>().ok();
+                                    }
+                                }
+                            }
+                            None
+                        }
+
+                        async fn read_saved_provider_config(herma_root: &str) -> (Option<String>, Option<String>, Option<f64>) {
+                            let config_path = format!("{}/config.toml", herma_root);
+                            match tokio::fs::read_to_string(std::path::Path::new(&config_path)).await {
+                                Ok(content) => (
+                                    parse_top_level_string_value(&content, "default_provider"),
+                                    parse_top_level_string_value(&content, "default_model"),
+                                    parse_top_level_number_value(&content, "default_temperature"),
+                                ),
+                                Err(_) => (None, None, None),
+                            }
+                        }
+
+                        // TTL cache for Ollama model list — avoids hammering Ollama on every
+                        // /api/status and /api/ollama/models request. Cache expires after 10s.
+                        use std::sync::OnceLock;
+                        use std::sync::Mutex as StdMutex;
+                        static OLLAMA_MODEL_CACHE: OnceLock<StdMutex<(Vec<String>, std::time::Instant)>> = OnceLock::new();
+
+                        async fn fetch_ollama_model_names() -> Result<Vec<String>, String> {
+                            const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(10);
+                            let cache = OLLAMA_MODEL_CACHE.get_or_init(|| {
+                                StdMutex::new((Vec::new(), std::time::Instant::now() - CACHE_TTL - std::time::Duration::from_secs(1)))
+                            });
+                            // Check cache first (hold lock briefly)
+                            {
+                                if let Ok(guard) = cache.lock() {
+                                    if guard.0.is_empty() == false && guard.1.elapsed() < CACHE_TTL {
+                                        return Ok(guard.0.clone());
+                                    }
+                                }
+                            }
+                            // Cache miss — fetch from Ollama
+                            let client = reqwest::Client::builder()
+                                .timeout(std::time::Duration::from_secs(3))
+                                .build()
+                                .map_err(|e| format!("client build failed: {}", e))?;
+
+                            let resp = client
+                                .get("http://127.0.0.1:11434/api/tags")
+                                .send()
+                                .await
+                                .map_err(|e| format!("ollama request failed: {}", e))?;
+
+                            let json = resp
+                                .json::<serde_json::Value>()
+                                .await
+                                .map_err(|e| format!("invalid ollama json: {}", e))?;
+
+                            let names = json
+                                .get("models")
+                                .and_then(|v| v.as_array())
+                                .map(|models| {
+                                    models
+                                        .iter()
+                                        .filter_map(|entry| entry.get("name").and_then(|v| v.as_str()))
+                                        .map(|name| name.to_string())
+                                        .collect::<Vec<String>>()
+                                })
+                                .unwrap_or_default();
+
+                            // Update cache
+                            if let Ok(mut guard) = cache.lock() {
+                                *guard = (names.clone(), std::time::Instant::now());
+                            }
+                            Ok(names)
+                        }
+
                 // Verbose logging: print every incoming request method, path and query
                 let q = req.uri().query().map(|s| format!("?{}", s)).unwrap_or_default();
                 log::debug!("Incoming request: {} {}{}", req.method(), req.uri().path(), q);
@@ -290,6 +413,10 @@ pub async fn run(
                 if normalized_path.starts_with("/api/v1/") {
                     normalized_path = normalized_path.replacen("/api/v1", "/api", 1);
                 }
+
+                // Map /api/v1/* to /api/* for backward compatibility only.
+                // NOTE: /health and /api/cost now have dedicated handlers below
+                // with correct response shapes for the SPA.
 
                 match (req.method(), normalized_path.as_str()) {
                     // Public pairing code endpoint used by the SPA
@@ -320,9 +447,9 @@ pub async fn run(
                             add_cors_headers(&mut bad);
                             return Ok::<_, hyper::Error>(bad);
                         }
-                        let code_str = match code_header.unwrap().to_str() {
-                            Ok(s) => s.to_string(),
-                            Err(_) => {
+                        let code_str = match code_header.and_then(|h| h.to_str().ok()) {
+                            Some(s) => s.to_string(),
+                            None => {
                                 let mut bad = Response::new(Body::from("Invalid X-Pairing-Code header"));
                                 *bad.status_mut() = StatusCode::BAD_REQUEST;
                                 add_cors_headers(&mut bad);
@@ -810,13 +937,31 @@ pub async fn run(
                             Err(_) => 0.0,
                         };
 
+                        let (saved_provider, saved_model, saved_temperature) = read_saved_provider_config(&herma_root).await;
+                        let detected_ollama_models = fetch_ollama_model_names().await.unwrap_or_default();
+                        let provider = saved_provider.unwrap_or_else(|| {
+                            if detected_ollama_models.is_empty() {
+                                "openrouter".to_string()
+                            } else {
+                                "ollama".to_string()
+                            }
+                        });
+                        let model = if let Some(model) = saved_model {
+                            model
+                        } else if provider == "ollama" {
+                            detected_ollama_models.first().cloned().unwrap_or_default()
+                        } else {
+                            String::new()
+                        };
+                        let temperature = saved_temperature.unwrap_or(0.7);
+
                         // For local development, always report paired to bypass pairing gate.
                         let paired = true;
 
                         let status_json = serde_json::json!({
-                            "provider": serde_json::Value::Null,
-                            "model": "",
-                            "temperature": 0,
+                            "provider": provider,
+                            "model": model,
+                            "temperature": temperature,
                             "uptime_seconds": uptime_seconds,
                             "gateway_port": 42617,
                             "locale": "en",
@@ -833,10 +978,972 @@ pub async fn run(
 
                         let mut res = Response::new(Body::from(status_json.to_string()));
                         res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
                         return Ok::<_, hyper::Error>(res);
                     }
 
+                    // ------------------------------------------------------------------
+                    // /api/v1/ollama/models — dynamic local model discovery for Config UI
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/ollama/models") => {
+                        match fetch_ollama_model_names().await {
+                            Ok(models) => {
+                                let body = serde_json::json!({
+                                    "provider": "ollama",
+                                    "reachable": true,
+                                    "models": models,
+                                });
+                                let mut res = Response::new(Body::from(body.to_string()));
+                                res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                                add_cors_headers(&mut res);
+                                Ok(res)
+                            }
+                            Err(err) => {
+                                let body = serde_json::json!({
+                                    "provider": "ollama",
+                                    "reachable": false,
+                                    "models": [],
+                                    "error": err,
+                                });
+                                let mut res = Response::new(Body::from(body.to_string()));
+                                *res.status_mut() = StatusCode::OK;
+                                res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                                add_cors_headers(&mut res);
+                                Ok(res)
+                            }
+                        }
+                    }
+
                     // removed: /api/audit.json handled above as SSE stream
+
+                    // ------------------------------------------------------------------
+                    // /health  — public pairing gate check (SPA startup)
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/health") => {
+                        let body = serde_json::json!({"require_pairing": false, "paired": true});
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/health — HealthSnapshot (used by dashboard widgets)
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/health") => {
+                        let uptime = match tokio::fs::read_to_string("/proc/uptime").await {
+                            Ok(s) => s.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0),
+                            Err(_) => 0.0,
+                        };
+                        let body = serde_json::json!({
+                            "pid": std::process::id(),
+                            "updated_at": "",
+                            "uptime_seconds": uptime,
+                            "components": {}
+                        });
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/cost — CostSummary (all zeros until billing tracking is added)
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/cost") => {
+                        let body = serde_json::json!({
+                            "session_cost_usd": 0.0_f64,
+                            "daily_cost_usd": 0.0_f64,
+                            "monthly_cost_usd": 0.0_f64,
+                            "total_tokens": 0,
+                            "request_count": 0,
+                            "by_model": {}
+                        });
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/tools — registered tool specs
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/tools") => {
+                        let body = serde_json::json!([]);
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/cron — cron job list + settings
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/cron") => {
+                        let body = serde_json::json!([]);
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    (&Method::POST, "/api/cron") => {
+                        let mut res = Response::new(Body::from("{\"error\":\"Cron scheduling not implemented\"}"));
+                        *res.status_mut() = StatusCode::NOT_IMPLEMENTED;
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    (&Method::GET, "/api/cron/settings") => {
+                        let body = serde_json::json!({
+                            "enabled": false,
+                            "catch_up_on_startup": false,
+                            "max_run_history": 50
+                        });
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    (&Method::PATCH, "/api/cron/settings") => {
+                        let body = serde_json::json!({"enabled":false,"catch_up_on_startup":false,"max_run_history":50,"status":"ok"});
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/integrations
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/integrations") => {
+                        let body = serde_json::json!([
+                            {"name":"Ollama","description":"Local LLM inference via Ollama","category":"AI","status":"Active"},
+                            {"name":"Memory","description":"LanceDB vector memory store","category":"Storage","status":"Active"},
+                            {"name":"WebSearch","description":"Web search integration","category":"Tools","status":"ComingSoon"},
+                            {"name":"Calendar","description":"Calendar scheduling","category":"Productivity","status":"ComingSoon"}
+                        ]);
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/channels
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/channels") => {
+                        let body = serde_json::json!([]);
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/sessions
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/sessions") => {
+                        let body = serde_json::json!([]);
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/cli-tools
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/cli-tools") => {
+                        let body = serde_json::json!([
+                            {"name":"herma-gateway","path":"/home/user/herma/target/release/herma-gateway","version":null,"category":"system"}
+                        ]);
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/config — read/write config.toml
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/config") => {
+                        let config_str = format!("{}/config.toml", &*herma_root);
+                        let content = tokio::fs::read_to_string(std::path::Path::new(&config_str)).await
+                            .unwrap_or_else(|_| "# Herma configuration\n".to_string());
+                        let body = serde_json::json!({"content": content, "format": "toml"});
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    (&Method::PUT, "/api/config") => {
+                        let whole = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+                        let config_str = format!("{}/config.toml", &*herma_root);
+                        match tokio::fs::write(std::path::Path::new(&config_str), &whole).await {
+                            Ok(()) => {
+                                let mut res = Response::new(Body::empty());
+                                *res.status_mut() = StatusCode::NO_CONTENT;
+                                add_cors_headers(&mut res);
+                                Ok(res)
+                            }
+                            Err(e) => {
+                                let mut res = Response::new(Body::from(format!("Failed to write config: {}", e)));
+                                *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                                add_cors_headers(&mut res);
+                                Ok(res)
+                            }
+                        }
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/doctor — diagnostic check (same logic as herma doctor)
+                    // ------------------------------------------------------------------
+                    (&Method::POST, "/api/doctor") => {
+                        let ollama_ok = tokio::net::TcpStream::connect(("127.0.0.1", 11434)).await.is_ok();
+                        let body = serde_json::json!([
+                            {
+                                "severity": if ollama_ok { "ok" } else { "warn" },
+                                "category": "ollama",
+                                "message": if ollama_ok { "Ollama is reachable on port 11434" } else { "Ollama not reachable on port 11434" }
+                            },
+                            {"severity":"ok","category":"gateway","message":"Gateway is running"},
+                            {"severity":"ok","category":"memory","message":"Memory backend initialized"}
+                        ]);
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/v1/soul (and legacy /api/v1/memory/soul) — Read / write soul.md
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/memory/soul") | (&Method::GET, "/api/soul") => {
+                        let soul_path = format!("{}/soul.md", &*herma_root);
+                        let content = tokio::fs::read_to_string(&soul_path).await
+                            .unwrap_or_else(|_| "# Soul\n\nDefine your agent's identity here.\n".to_string());
+                        let body = serde_json::json!({"content": content});
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    (&Method::POST, "/api/memory/soul")
+                    | (&Method::PUT, "/api/memory/soul")
+                    | (&Method::POST, "/api/soul")
+                    | (&Method::PUT, "/api/soul") => {
+                        let whole = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+                        // Accept either raw text or {"content":"..."} JSON
+                        let markdown: String = serde_json::from_slice::<serde_json::Value>(&whole)
+                            .ok()
+                            .and_then(|v| v.get("content").and_then(|c| c.as_str()).map(|s| s.to_string()))
+                            .unwrap_or_else(|| String::from_utf8_lossy(&whole).into_owned());
+                        let soul_path = format!("{}/soul.md", &*herma_root);
+                        match tokio::fs::write(&soul_path, markdown.as_bytes()).await {
+                            Ok(()) => {
+                                let mut res = Response::new(Body::from("{\"status\":\"saved\",\"reinitialized\":true}"));
+                                res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                                add_cors_headers(&mut res);
+                                Ok(res)
+                            }
+                            Err(e) => {
+                                let mut res = Response::new(Body::from(format!("{{\"error\":\"{}\"}}", e)));
+                                *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                                add_cors_headers(&mut res);
+                                Ok(res)
+                            }
+                        }
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/v1/hardware  — CPU / RAM / GPU telemetry from /proc
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/hardware") => {
+                        // CPU: two quick /proc/stat reads 200 ms apart → usage %
+                        async fn read_stat_idle() -> Option<(u64, u64)> {
+                            let s = tokio::fs::read_to_string("/proc/stat").await.ok()?;
+                            let line = s.lines().next()?;
+                            let nums: Vec<u64> = line.split_whitespace().skip(1)
+                                .filter_map(|v| v.parse().ok()).collect();
+                            if nums.len() < 4 { return None; }
+                            let idle = nums[3] + nums.get(4).copied().unwrap_or(0);
+                            let total: u64 = nums.iter().sum();
+                            Some((idle, total))
+                        }
+
+                        let snap1 = read_stat_idle().await;
+                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        let snap2 = read_stat_idle().await;
+
+                        let cpu_percent = match (snap1, snap2) {
+                            (Some((i1, t1)), Some((i2, t2))) if t2 > t1 => {
+                                let d_idle = i2.saturating_sub(i1) as f64;
+                                let d_total = (t2 - t1) as f64;
+                                ((1.0 - d_idle / d_total) * 100.0).clamp(0.0, 100.0)
+                            }
+                            _ => 0.0,
+                        };
+
+                        // RAM from /proc/meminfo
+                        let (ram_total_gb, ram_used_gb, ram_percent) = match tokio::fs::read_to_string("/proc/meminfo").await {
+                            Ok(s) => {
+                                let mut total_kb = 0u64;
+                                let mut avail_kb = 0u64;
+                                for line in s.lines() {
+                                    if line.starts_with("MemTotal:") {
+                                        total_kb = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+                                    } else if line.starts_with("MemAvailable:") {
+                                        avail_kb = line.split_whitespace().nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+                                    }
+                                }
+                                let total = total_kb as f64 / 1_048_576.0;
+                                let used = (total_kb.saturating_sub(avail_kb)) as f64 / 1_048_576.0;
+                                let pct = if total > 0.0 { (used / total * 100.0).clamp(0.0, 100.0) } else { 0.0 };
+                                (total, used, pct)
+                            }
+                            Err(_) => (0.0, 0.0, 0.0),
+                        };
+
+                        // GPU / VRAM — probe Ollama ps endpoint
+                        let client = reqwest::Client::builder()
+                            .timeout(std::time::Duration::from_secs(2))
+                            .build()
+                            .unwrap_or_default();
+                        let (gpu_percent, vram_used_gb, vram_total_gb, model_loaded, loaded_model) =
+                            match client.get("http://127.0.0.1:11434/api/ps").send().await {
+                                Ok(r) => {
+                                    if let Ok(j) = r.json::<serde_json::Value>().await {
+                                        let models = j.get("models").and_then(|m| m.as_array());
+                                        let (mut vu, mut vt, mut name, mut active_model) = (0.0f64, 0.0f64, false, String::new());
+                                        if let Some(list) = models {
+                                            for m in list {
+                                                let size = m.get("size_vram").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                                let total = m.get("size").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                                vu += size / 1_073_741_824.0;
+                                                vt += total / 1_073_741_824.0;
+                                                if let Some(model_name) = m.get("name").and_then(|v| v.as_str()) {
+                                                    name = true;
+                                                    if active_model.is_empty() {
+                                                        active_model = model_name.to_string();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        let gpu_pct = if vt > 0.0 { (vu / vt * 100.0).clamp(0.0, 100.0) } else { 0.0 };
+                                        (gpu_pct, vu, vt, name, active_model)
+                                    } else {
+                                        (0.0, 0.0, 0.0, false, String::new())
+                                    }
+                                }
+                                Err(_) => (0.0, 0.0, 0.0, false, String::new()),
+                            };
+
+                        let body = serde_json::json!({
+                            "cpu_percent": (cpu_percent * 10.0).round() / 10.0,
+                            "ram_used_gb": (ram_used_gb * 100.0).round() / 100.0,
+                            "ram_total_gb": (ram_total_gb * 100.0).round() / 100.0,
+                            "ram_percent": (ram_percent * 10.0).round() / 10.0,
+                            "gpu_percent": (gpu_percent * 10.0).round() / 10.0,
+                            "vram_used_gb": (vram_used_gb * 100.0).round() / 100.0,
+                            "vram_total_gb": (vram_total_gb * 100.0).round() / 100.0,
+                            "model_loaded": model_loaded,
+                            "loaded_model": loaded_model
+                        });
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/v1/ollama/pull — start pulling a local Ollama model in background
+                    // ------------------------------------------------------------------
+                    (&Method::POST, "/api/ollama/pull") => {
+                        let whole = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+                        let pull_req = serde_json::from_slice::<OllamaPullRequest>(&whole);
+
+                        match pull_req {
+                            Ok(body) => {
+                                let model = body.model.trim().to_string();
+                                if model.is_empty() {
+                                    let mut bad = Response::new(Body::from("{\"error\":\"model is required\"}"));
+                                    *bad.status_mut() = StatusCode::BAD_REQUEST;
+                                    bad.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                                    add_cors_headers(&mut bad);
+                                    return Ok(bad);
+                                }
+
+                                let model_for_task = model.clone();
+                                let log_sender = log_tx_req.clone();
+                                tokio::spawn(async move {
+                                    let _ = log_sender.send(format!("Starting Ollama pull for {}", model_for_task));
+                                    match tokio::process::Command::new("ollama")
+                                        .arg("pull")
+                                        .arg(&model_for_task)
+                                        .output()
+                                        .await
+                                    {
+                                        Ok(output) => {
+                                            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                                            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                                            let msg = if output.status.success() {
+                                                format!("Ollama pull finished for {}{}{}", model_for_task, if stdout.is_empty() { "" } else { ": " }, stdout)
+                                            } else {
+                                                format!("Ollama pull failed for {}{}{}", model_for_task, if stderr.is_empty() { "" } else { ": " }, stderr)
+                                            };
+                                            let _ = log_sender.send(msg);
+                                        }
+                                        Err(err) => {
+                                            let _ = log_sender.send(format!("Failed to start Ollama pull for {}: {}", model_for_task, err));
+                                        }
+                                    }
+                                });
+
+                                let body = serde_json::json!({
+                                    "status": "started",
+                                    "model": model,
+                                    "message": format!("Started Ollama pull for {}. Refresh models in a few seconds.", model),
+                                });
+                                let mut res = Response::new(Body::from(body.to_string()));
+                                res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                                add_cors_headers(&mut res);
+                                Ok(res)
+                            }
+                            Err(_) => {
+                                let mut bad = Response::new(Body::from("{\"error\":\"invalid json\"}"));
+                                *bad.status_mut() = StatusCode::BAD_REQUEST;
+                                bad.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                                add_cors_headers(&mut bad);
+                                Ok(bad)
+                            }
+                        }
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/v1/tools/status  — ZeroClaw tool availability probe
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/tools/status") => {
+                        async fn probe_cmd(cmd: &str, arg: &str) -> bool {
+                            tokio::process::Command::new(cmd).arg(arg)
+                                .output().await.map(|o| o.status.success()).unwrap_or(false)
+                        }
+                        let (shell_ok, git_ok, file_ok) = tokio::join!(
+                            probe_cmd("sh", "--version"),
+                            probe_cmd("git", "--version"),
+                            probe_cmd("file", "--version")
+                        );
+                        let body = serde_json::json!([
+                            {
+                                "name": "Shell",
+                                "tool_id": "shell",
+                                "description": "Execute shell commands via /bin/sh",
+                                "available": shell_ok,
+                                "locked": false,
+                                "icon": "Terminal"
+                            },
+                            {
+                                "name": "Git",
+                                "tool_id": "git",
+                                "description": "Version control operations",
+                                "available": git_ok,
+                                "locked": false,
+                                "icon": "GitBranch"
+                            },
+                            {
+                                "name": "File",
+                                "tool_id": "file",
+                                "description": "Read, write and inspect files on disk",
+                                "available": file_ok,
+                                "locked": false,
+                                "icon": "FolderOpen"
+                            },
+                            {
+                                "name": "Memory",
+                                "tool_id": "memory",
+                                "description": "LanceDB long-term vector memory",
+                                "available": true,
+                                "locked": false,
+                                "icon": "Brain"
+                            },
+                            {
+                                "name": "HTTP",
+                                "tool_id": "http",
+                                "description": "Outbound HTTP requests via reqwest",
+                                "available": true,
+                                "locked": false,
+                                "icon": "Globe"
+                            }
+                        ]);
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/v1/logs  — snapshot of recent gateway.log lines
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/logs") => {
+                        let log_path = format!("{}/run_logs/gateway.log", &*herma_root);
+
+                        let limit = req
+                            .uri()
+                            .query()
+                            .and_then(|q| {
+                                q.split('&')
+                                    .find(|p| p.starts_with("limit="))
+                                    .and_then(|p| p.split('=').nth(1))
+                            })
+                            .and_then(|v| v.parse::<usize>().ok())
+                            .unwrap_or(200)
+                            .min(2000);
+
+                        let body = match tokio::fs::read_to_string(&log_path).await {
+                            Ok(content) => {
+                                let lines: Vec<String> = content
+                                    .lines()
+                                    .rev()
+                                    .take(limit)
+                                    .map(|s| s.to_string())
+                                    .collect::<Vec<String>>()
+                                    .into_iter()
+                                    .rev()
+                                    .collect();
+                                serde_json::json!({"lines": lines, "count": lines.len()})
+                            }
+                            Err(_) => serde_json::json!({"lines": [], "count": 0}),
+                        };
+
+                        let mut res = Response::new(Body::from(body.to_string()));
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json; charset=utf-8"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /api/v1/logs/stream  — SSE tail of run_logs/gateway.log
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/api/logs/stream") => {
+                        use tokio::io::AsyncSeekExt;
+
+                        let log_path = format!("{}/run_logs/gateway.log", &*herma_root);
+                        let (tx_sse, rx_sse) = tokio::sync::mpsc::channel::<String>(256);
+
+                        tokio::spawn(async move {
+                            let mut file = match tokio::fs::OpenOptions::new().read(true).open(&log_path).await {
+                                Ok(f) => f,
+                                Err(_) => {
+                                    let _ = tx_sse.send("data: {\"line\":\"[log file not found]\"}\n\n".to_string()).await;
+                                    return;
+                                }
+                            };
+                            // Seek near end (last ~8 KB) for initial tail
+                            let meta = file.metadata().await.ok();
+                            if let Some(m) = meta {
+                                let seek_pos = m.len().saturating_sub(8192);
+                                let _ = file.seek(std::io::SeekFrom::Start(seek_pos)).await;
+                            }
+                            // Scan to next newline boundary
+                            let mut scan_buf = [0u8; 1];
+                            loop {
+                                match file.read_exact(&mut scan_buf).await {
+                                    Ok(_) if scan_buf[0] == b'\n' => break,
+                                    Ok(_) => {}
+                                    Err(_) => break,
+                                }
+                            }
+                            // Tail loop
+                            let mut line_buf = String::new();
+                            let mut read_buf = [0u8; 512];
+                            loop {
+                                match file.read(&mut read_buf).await {
+                                    Ok(0) => {
+                                        // EOF — wait and poll
+                                        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                                    }
+                                    Ok(n) => {
+                                        let chunk = String::from_utf8_lossy(&read_buf[..n]);
+                                        for ch in chunk.chars() {
+                                            if ch == '\n' {
+                                                let trimmed = line_buf.trim().to_string();
+                                                if !trimmed.is_empty() {
+                                                    let escaped = trimmed.replace('\\', "\\\\").replace('"', "\\\"");
+                                                    let payload = format!("data: {{\"line\":\"{}\"}}\n\n", escaped);
+                                                    if tx_sse.send(payload).await.is_err() { return; }
+                                                }
+                                                line_buf.clear();
+                                            } else {
+                                                line_buf.push(ch);
+                                            }
+                                        }
+                                    }
+                                    Err(_) => return,
+                                }
+                            }
+                        });
+
+                        // Build a streaming Body from the receiver channel using
+                        // hyper::Body::channel() — no extra crate needed.
+                        let (mut body_tx, body) = hyper::Body::channel();
+                        tokio::spawn(async move {
+                            let mut rx = rx_sse;
+                            while let Some(msg) = rx.recv().await {
+                                if body_tx.send_data(Bytes::from(msg)).await.is_err() {
+                                    break;
+                                }
+                            }
+                        });
+                        let mut res = Response::new(body);
+                        res.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("text/event-stream; charset=utf-8"));
+                        res.headers_mut().insert(hyper::header::CACHE_CONTROL, hyper::header::HeaderValue::from_static("no-cache"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /ws/nexus — WebSocket for internal Chain-of-Thought stream
+                    // Same upgrade pattern as /ws/chat but emits only "thinking" frames.
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/ws/nexus") => {
+                        use ring::digest::{Context as DigestCtx, SHA1_FOR_LEGACY_USE_ONLY};
+                        use base64::Engine as _;
+
+                        let ws_key = req.headers()
+                            .get("Sec-WebSocket-Key")
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_string());
+                        let is_upgrade = req.headers()
+                            .get(hyper::header::UPGRADE)
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_lowercase()) == Some("websocket".to_string());
+
+                        let key = match (ws_key, is_upgrade) {
+                            (Some(k), true) => k,
+                            _ => {
+                                let mut bad = Response::new(Body::from("Expected WebSocket upgrade"));
+                                *bad.status_mut() = StatusCode::BAD_REQUEST;
+                                add_cors_headers(&mut bad);
+                                return Ok::<_, hyper::Error>(bad);
+                            }
+                        };
+
+                        let mut sha_ctx = DigestCtx::new(&SHA1_FOR_LEGACY_USE_ONLY);
+                        sha_ctx.update(key.as_bytes());
+                        sha_ctx.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+                        let sha_bytes = sha_ctx.finish();
+                        let accept = base64::engine::general_purpose::STANDARD.encode(sha_bytes.as_ref());
+
+                        let upgrade = hyper::upgrade::on(req);
+                        let log_tx_nexus = log_tx_req.clone();
+
+                        tokio::spawn(async move {
+                            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+                            async fn ws_send_text(
+                                stream: &mut hyper::upgrade::Upgraded,
+                                text: &str,
+                            ) -> bool {
+                                let payload = text.as_bytes();
+                                let len = payload.len();
+                                let mut header: Vec<u8> = Vec::with_capacity(10);
+                                header.push(0x81);
+                                if len < 126 { header.push(len as u8); }
+                                else if len < 65536 { header.push(0x7E); header.push((len >> 8) as u8); header.push((len & 0xFF) as u8); }
+                                else { header.push(0x7F); for i in (0..8).rev() { header.push(((len >> (i * 8)) & 0xFF) as u8); } }
+                                if stream.write_all(&header).await.is_err() { return false; }
+                                if stream.write_all(payload).await.is_err() { return false; }
+                                stream.flush().await.is_ok()
+                            }
+
+                            let mut upgraded = match upgrade.await {
+                                Ok(u) => u,
+                                Err(e) => { log::error!("Nexus WS upgrade error: {:?}", e); return; }
+                            };
+
+                            let connected_msg = serde_json::json!({
+                                "type": "nexus_connected",
+                                "message": "Nexus Chain-of-Thought stream active. Awaiting reasoning frames.",
+                                "stream": "internal"
+                            }).to_string();
+                            if !ws_send_text(&mut upgraded, &connected_msg).await { return; }
+
+                            // Send periodic heartbeat + simulated thinking frame
+                            let mut tick = 0u32;
+                            loop {
+                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                                tick += 1;
+                                let heartbeat = serde_json::json!({
+                                    "type": "heartbeat",
+                                    "tick": tick,
+                                    "stream": "nexus"
+                                }).to_string();
+                                if !ws_send_text(&mut upgraded, &heartbeat).await { break; }
+
+                                // Check for incoming close/ping frames (non-blocking)
+                                let mut h2 = [0u8; 2];
+                                // We use a short timeout via a select — if no data, skip
+                                match tokio::time::timeout(
+                                    std::time::Duration::from_millis(10),
+                                    upgraded.read_exact(&mut h2),
+                                ).await {
+                                    Ok(Ok(_)) => {
+                                        let opcode = h2[0] & 0x0F;
+                                        if opcode == 0x8 { break; }
+                                    }
+                                    _ => {} // no data or error — continue heartbeat loop
+                                }
+                            }
+
+                            let _ = upgraded.write_all(&[0x88, 0x00]).await;
+                            let _ = upgraded.flush().await;
+                            let _ = log_tx_nexus.send("[Nexus] Client disconnected".to_string());
+                        });
+
+                        let mut res = Response::builder()
+                            .status(StatusCode::SWITCHING_PROTOCOLS)
+                            .header(hyper::header::UPGRADE, "websocket")
+                            .header(hyper::header::CONNECTION, "Upgrade")
+                            .header("Sec-WebSocket-Accept", accept)
+                            .header("Sec-WebSocket-Protocol", "herma.v1")
+                            .body(Body::empty())
+                            .unwrap();
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    // ------------------------------------------------------------------
+                    // /ws/chat — WebSocket upgrade for Agent Chat page
+                    // Uses ring (SHA-1) + base64 already in the lock file via rustls.
+                    // Frames are handled manually with tokio AsyncRead/AsyncWrite.
+                    // ------------------------------------------------------------------
+                    (&Method::GET, "/ws/chat") => {
+                        let ws_key = req.headers()
+                            .get("Sec-WebSocket-Key")
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_string());
+                        let is_upgrade = req.headers()
+                            .get(hyper::header::UPGRADE)
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_lowercase()) == Some("websocket".to_string());
+
+                        let key = match (ws_key, is_upgrade) {
+                            (Some(k), true) => k,
+                            _ => {
+                                let mut bad = Response::new(Body::from("Expected WebSocket upgrade"));
+                                *bad.status_mut() = StatusCode::BAD_REQUEST;
+                                add_cors_headers(&mut bad);
+                                return Ok::<_, hyper::Error>(bad);
+                            }
+                        };
+
+                        // Compute Sec-WebSocket-Accept = base64(sha1(key + WS_MAGIC))
+                        use ring::digest::{Context as DigestCtx, SHA1_FOR_LEGACY_USE_ONLY};
+                        use base64::Engine as _;
+                        let mut sha_ctx = DigestCtx::new(&SHA1_FOR_LEGACY_USE_ONLY);
+                        sha_ctx.update(key.as_bytes());
+                        sha_ctx.update(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+                        let sha_bytes = sha_ctx.finish();
+                        let accept = base64::engine::general_purpose::STANDARD.encode(sha_bytes.as_ref());
+
+                        let upgrade = hyper::upgrade::on(req);
+                        let log_tx_ws = log_tx_req.clone();
+                        let herma_root_ws = herma_root.clone();
+
+                        tokio::spawn(async move {
+                            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+                            // Send an unmasked text frame to the client.
+                            async fn ws_send_text(
+                                stream: &mut hyper::upgrade::Upgraded,
+                                text: &str,
+                            ) -> bool {
+                                let payload = text.as_bytes();
+                                let len = payload.len();
+                                let mut header: Vec<u8> = Vec::with_capacity(10);
+                                header.push(0x81); // FIN=1, opcode=1 (text)
+                                if len < 126 {
+                                    header.push(len as u8);
+                                } else if len < 65536 {
+                                    header.push(0x7E);
+                                    header.push((len >> 8) as u8);
+                                    header.push((len & 0xFF) as u8);
+                                } else {
+                                    header.push(0x7F);
+                                    for i in (0..8).rev() {
+                                        header.push(((len >> (i * 8)) & 0xFF) as u8);
+                                    }
+                                }
+                                if stream.write_all(&header).await.is_err() { return false; }
+                                if stream.write_all(payload).await.is_err() { return false; }
+                                stream.flush().await.is_ok()
+                            }
+
+                            let mut upgraded = match upgrade.await {
+                                Ok(u) => u,
+                                Err(e) => { log::error!("WS upgrade error: {:?}", e); return; }
+                            };
+
+                            // Send "connected" event
+                            let connected = serde_json::json!({
+                                "type": "connected",
+                                "session_id": "local",
+                                "resumed": false,
+                                "message_count": 0
+                            }).to_string();
+                            if !ws_send_text(&mut upgraded, &connected).await { return; }
+
+                            let hr = (*herma_root_ws).clone();
+                            let mut conversation: Vec<serde_json::Value> = Vec::new();
+                            // Cap conversation context at 40 messages (20 exchanges) to prevent
+                            // unbounded memory growth and Ollama context window overflow.
+                            const MAX_CONVERSATION_MSGS: usize = 40;
+
+                            // Read config once at connection time; re-read each message so
+                            // model changes in Config tab take effect without reconnecting.
+                            let ollama_client = reqwest::Client::builder()
+                                .timeout(std::time::Duration::from_secs(300))
+                                .build()
+                                .unwrap_or_else(|_| reqwest::Client::new());
+
+                            fn get_toml_top(toml: &str, key: &str) -> Option<String> {
+                                let mut in_section = false;
+                                for raw in toml.lines() {
+                                    let line = raw.trim();
+                                    if line.is_empty() || line.starts_with('#') { continue; }
+                                    if line.starts_with('[') { in_section = true; continue; }
+                                    if in_section { continue; }
+                                    if let Some((lhs, rhs)) = line.split_once('=') {
+                                        if lhs.trim() == key {
+                                            return Some(rhs.trim().trim_matches('"').to_string());
+                                        }
+                                    }
+                                }
+                                None
+                            }
+
+                            // Frame read loop
+                            loop {
+                                let mut h2 = [0u8; 2];
+                                if upgraded.read_exact(&mut h2).await.is_err() { break; }
+
+                                let opcode = h2[0] & 0x0F;
+                                let masked = (h2[1] & 0x80) != 0;
+                                let mut payload_len = (h2[1] & 0x7F) as usize;
+
+                                if payload_len == 126 {
+                                    let mut ext = [0u8; 2];
+                                    if upgraded.read_exact(&mut ext).await.is_err() { break; }
+                                    payload_len = u16::from_be_bytes(ext) as usize;
+                                } else if payload_len == 127 {
+                                    let mut ext = [0u8; 8];
+                                    if upgraded.read_exact(&mut ext).await.is_err() { break; }
+                                    payload_len = u64::from_be_bytes(ext) as usize;
+                                }
+
+                                let mask_key: Option<[u8; 4]> = if masked {
+                                    let mut m = [0u8; 4];
+                                    if upgraded.read_exact(&mut m).await.is_err() { break; }
+                                    Some(m)
+                                } else {
+                                    None
+                                };
+
+                                // Clamp to 1 MiB to protect against oversized frames
+                                if payload_len > 1_048_576 { break; }
+                                let mut payload = vec![0u8; payload_len];
+                                if upgraded.read_exact(&mut payload).await.is_err() { break; }
+                                if let Some(mk) = mask_key {
+                                    for (i, b) in payload.iter_mut().enumerate() {
+                                        *b ^= mk[i % 4];
+                                    }
+                                }
+
+                                match opcode {
+                                    0x8 => break, // Close
+                                    0x9 => {
+                                        // Ping → Pong
+                                        let plen = payload.len().min(125) as u8;
+                                        let mut pong = vec![0x8A, plen];
+                                        pong.extend_from_slice(&payload[..plen as usize]);
+                                        let _ = upgraded.write_all(&pong).await;
+                                        let _ = upgraded.flush().await;
+                                    }
+                                    0x1 | 0x2 => {
+                                        // Text or binary frame — dispatch to Ollama
+                                        let text = String::from_utf8_lossy(&payload).into_owned();
+                                        let _ = log_tx_ws.send(format!("[WS:chat] recv {} bytes", text.len()));
+                                        let msg_val: serde_json::Value = match serde_json::from_str(&text) {
+                                            Ok(v) => v,
+                                            Err(_) => {
+                                                let e = serde_json::json!({"type":"error","code":"INVALID_JSON","message":"Invalid JSON"}).to_string();
+                                                if !ws_send_text(&mut upgraded, &e).await { break; }
+                                                continue;
+                                            }
+                                        };
+                                        let msg_type = msg_val.get("type").and_then(|v| v.as_str()).unwrap_or("message");
+                                        let content = msg_val.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                        if msg_type == "message" && !content.is_empty() {
+                                            conversation.push(serde_json::json!({"role":"user","content":content}));
+                                            // Trim oldest turns if over cap (keep system balance: drop oldest user+assistant pair)
+                                            if conversation.len() > MAX_CONVERSATION_MSGS {
+                                                let excess = conversation.len() - MAX_CONVERSATION_MSGS;
+                                                conversation.drain(0..excess);
+                                            }
+                                            let cfg = tokio::fs::read_to_string(format!("{}/config.toml", hr)).await.unwrap_or_default();
+                                            let provider = get_toml_top(&cfg, "default_provider").unwrap_or_default();
+                                            let model = get_toml_top(&cfg, "default_model").unwrap_or_default();
+                                            if provider == "ollama" && !model.is_empty() {
+                                                let body = serde_json::json!({"model":model,"messages":conversation,"stream":false});
+                                                match ollama_client.post("http://127.0.0.1:11434/api/chat").json(&body).send().await {
+                                                    Ok(resp) => match resp.json::<serde_json::Value>().await {
+                                                        Ok(j) => {
+                                                            let reply = j.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str()).unwrap_or("").to_string();
+                                                            conversation.push(serde_json::json!({"role":"assistant","content":reply}));
+                                                            let chunk = serde_json::json!({"type":"chunk","content":reply}).to_string();
+                                                            if !ws_send_text(&mut upgraded, &chunk).await { break; }
+                                                            let done = serde_json::json!({"type":"done","full_response":reply}).to_string();
+                                                            if !ws_send_text(&mut upgraded, &done).await { break; }
+                                                        }
+                                                        Err(e) => {
+                                                            let err = serde_json::json!({"type":"error","code":"PROVIDER_ERROR","message":format!("Ollama parse error: {}", e)}).to_string();
+                                                            if !ws_send_text(&mut upgraded, &err).await { break; }
+                                                        }
+                                                    },
+                                                    Err(e) => {
+                                                        let err = serde_json::json!({"type":"error","code":"PROVIDER_ERROR","message":format!("Ollama error: {}", e)}).to_string();
+                                                        if !ws_send_text(&mut upgraded, &err).await { break; }
+                                                    }
+                                                }
+                                            } else {
+                                                let err = serde_json::json!({"type":"error","code":"AGENT_INIT_FAILED","message":format!("Provider '{}' not configured. Set provider=ollama and a model in Config.", provider)}).to_string();
+                                                if !ws_send_text(&mut upgraded, &err).await { break; }
+                                            }
+                                        }
+                                    }
+                                    _ => {} // ignore other opcodes (continuation, etc.)
+                                }
+                            }
+
+                            // Send close frame
+                            let _ = upgraded.write_all(&[0x88, 0x00]).await;
+                            let _ = upgraded.flush().await;
+                        });
+
+                        let mut res = Response::builder()
+                            .status(StatusCode::SWITCHING_PROTOCOLS)
+                            .header(hyper::header::UPGRADE, "websocket")
+                            .header(hyper::header::CONNECTION, "Upgrade")
+                            .header("Sec-WebSocket-Accept", accept)
+                            .header("Sec-WebSocket-Protocol", "herma.v1")
+                            .body(Body::empty())
+                            .unwrap();
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
 
                     (&Method::GET, "/api/memory") => {
                         // Backward-compatible endpoint used by the SPA: /api/memory
@@ -1191,6 +2298,47 @@ pub async fn run(
                         }
                     }
 
+                    (&Method::GET, "/api/lattice/top_k") => {
+                        let json = crate::lattice::handle_top_k(&lattice_entity_req).await;
+                        let body = json.to_string();
+                        let mut res = Response::new(Body::from(body));
+                        res.headers_mut().insert(
+                            hyper::header::CONTENT_TYPE,
+                            hyper::header::HeaderValue::from_static("application/json"),
+                        );
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    (&Method::POST, "/api/lattice/init") => {
+                        let msg = crate::lattice::handle_init(&lattice_entity_req).await;
+                        let mut res = Response::new(Body::from(msg));
+                        res.headers_mut().insert(
+                            hyper::header::CONTENT_TYPE,
+                            hyper::header::HeaderValue::from_static("text/plain; charset=utf-8"),
+                        );
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    (&Method::POST, "/api/lattice/inject_word") => {
+                        let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap_or_default();
+                        let word = serde_json::from_slice::<serde_json::Value>(&body_bytes)
+                            .ok()
+                            .and_then(|v| v.get("word").and_then(|w| w.as_str()).map(|s| s.to_owned()))
+                            .unwrap_or_default();
+                        crate::lattice::handle_inject(&lattice_entity_req, word).await;
+                        let mut res = Response::new(Body::from("ok"));
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
+                    (&Method::OPTIONS, p) if p.starts_with("/api/lattice/") => {
+                        let mut res = Response::new(Body::empty());
+                        add_cors_headers(&mut res);
+                        Ok(res)
+                    }
+
                     _ => {
                         // If this is a GET request, try to serve static files from the built web output.
                         if req.method() == &Method::GET {
@@ -1200,7 +2348,6 @@ pub async fn run(
                                 add_cors_headers(&mut res);
                                 return Ok::<_, hyper::Error>(res);
                             }
-                        }
                         }
 
                         let mut not_found = Response::default();
@@ -1212,9 +2359,9 @@ pub async fn run(
             }
         });
 
-        // Spawn a task to serve this connection
+        // Spawn a task to serve this connection (with_upgrades enables WebSocket)
         tokio::spawn(async move {
-            if let Err(err) = Http::new().serve_connection(stream, svc).await {
+            if let Err(err) = Http::new().serve_connection(stream, svc).with_upgrades().await {
                 log::error!("Gateway connection error: {:?}", err);
             }
         });

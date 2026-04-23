@@ -3,6 +3,8 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import { ErrorBoundary } from '@/App';
+import StarMap from '@/components/StarMap';
+import { useResonance } from '@/hooks/useResonance';
 
 const SIDEBAR_COLLAPSED_KEY = 'zeroclaw-sidebar-collapsed';
 
@@ -16,6 +18,10 @@ export default function Layout() {
       return false;
     }
   });
+
+  // Resonance hook — starts polling once lattice is inited from GhostTerminal
+  const [latticeReady, setLatticeReady] = useState(false);
+  const { glowMapRef, topK } = useResonance(latticeReady);
 
   // Close sidebar on route change (mobile navigation)
   useEffect(() => {
@@ -33,6 +39,22 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen text-white" style={{ background: 'var(--pc-bg-base)' }}>
+      {/* StarMap — full-viewport fixed background overlay */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          zIndex: -1,
+          opacity: 0.15,
+          pointerEvents: 'none',
+        }}
+      >
+        <StarMap glowMapRef={glowMapRef} topK={topK} />
+      </div>
+
       {/* Fixed sidebar */}
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} collapsed={collapsed} />
 
@@ -54,7 +76,7 @@ export default function Layout() {
             survives a page crash and the boundary resets on route change */}
         <main className="flex-1 overflow-y-auto min-h-0">
           <ErrorBoundary key={pathname}>
-            <Outlet />
+            <Outlet context={{ latticeReady, setLatticeReady, glowMapRef }} />
           </ErrorBoundary>
         </main>
       </div>

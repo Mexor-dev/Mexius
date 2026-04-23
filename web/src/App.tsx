@@ -14,6 +14,9 @@ import Logs from './pages/Logs';
 import Doctor from './pages/Doctor';
 import Pairing from './pages/Pairing';
 import Canvas from './pages/Canvas';
+import Nexus from './pages/Nexus';
+import SoulEditor from './pages/SoulEditor';
+import Telemetry from './pages/Telemetry';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { DraftContext, useDraftStore } from './hooks/useDraft';
 import { setLocale, type Locale } from './lib/i18n';
@@ -229,13 +232,16 @@ function AppContent() {
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/agent" element={<AgentChat />} />
+            <Route path="/nexus" element={<Nexus />} />
             <Route path="/tools" element={<Tools />} />
             <Route path="/cron" element={<Cron />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/memory" element={<Memory />} />
+            <Route path="/soul" element={<SoulEditor />} />
             <Route path="/config" element={<Config />} />
             <Route path="/cost" element={<Cost />} />
             <Route path="/logs" element={<Logs />} />
+            <Route path="/telemetry" element={<Telemetry />} />
             <Route path="/doctor" element={<Doctor />} />
             <Route path="/pairing" element={<Pairing />} />
             <Route path="/canvas" element={<Canvas />} />

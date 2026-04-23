@@ -56,33 +56,6 @@ export default function AgentChat() {
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingThinking, setStreamingThinking] = useState('');
 
-  // NEXUS: side-panel state and soul monitor
-  const [nexus, setNexus] = useState<Record<'STRATEGIST' | 'CODER', { content: string; thinking: string; active: boolean }>>({
-    STRATEGIST: { content: '', thinking: '', active: false },
-    CODER: { content: '', thinking: '', active: false },
-  });
-
-  const [soul, setSoul] = useState<any>(null);
-
-  const debateActive = nexus.STRATEGIST.active && nexus.CODER.active;
-
-  // Poll Soul Monitor to show basic neural activity and help sync with Nexus
-  useEffect(() => {
-    let mounted = true;
-    async function poll() {
-      try {
-        const r = await fetch('/api/soul_monitor');
-        if (!r.ok) return;
-        const j = await r.json();
-        if (!mounted) return;
-        setSoul(j.neural_activity ?? j);
-      } catch {}
-    }
-    poll();
-    const id = setInterval(poll, 2500);
-    return () => { mounted = false; clearInterval(id); };
-  }, []);
-
   // Persist draft to in-memory store so it survives route changes
   useEffect(() => {
     saveDraft(input);
@@ -159,34 +132,14 @@ export default function AgentChat() {
 
         case 'thinking':
           setTyping(true);
-          {
-            const raw = msg.content ?? '';
-            const m = raw.match(/^\s*\[([A-Z_]+)\]\s*/);
-            if (m && (m[1] === 'STRATEGIST' || m[1] === 'CODER')) {
-              const tag = m[1] as 'STRATEGIST' | 'CODER';
-              const text = raw.slice(m[0].length);
-              setNexus((prev) => ({ ...prev, [tag]: { ...prev[tag], thinking: prev[tag].thinking + text, active: true } }));
-            } else {
-              pendingThinkingRef.current += raw;
-              setStreamingThinking(pendingThinkingRef.current);
-            }
-          }
+          pendingThinkingRef.current += msg.content ?? '';
+          setStreamingThinking(pendingThinkingRef.current);
           break;
 
         case 'chunk':
           setTyping(true);
-          {
-            const raw = msg.content ?? '';
-            const m = raw.match(/^\s*\[([A-Z_]+)\]\s*/);
-            if (m && (m[1] === 'STRATEGIST' || m[1] === 'CODER')) {
-              const tag = m[1] as 'STRATEGIST' | 'CODER';
-              const text = raw.slice(m[0].length);
-              setNexus((prev) => ({ ...prev, [tag]: { ...prev[tag], content: prev[tag].content + text, active: true } }));
-            } else {
-              pendingContentRef.current += raw;
-              setStreamingContent(pendingContentRef.current);
-            }
-          }
+          pendingContentRef.current += msg.content ?? '';
+          setStreamingContent(pendingContentRef.current);
           break;
 
         case 'chunk_reset':
@@ -197,14 +150,6 @@ export default function AgentChat() {
           pendingThinkingRef.current = '';
           setStreamingContent('');
           setStreamingThinking('');
-          // Clear thinking buffers for nexus (content persists until final)
-          setNexus((prev) => {
-            const copy = { ...prev };
-            (Object.keys(copy) as Array<'STRATEGIST' | 'CODER'>).forEach((k) => {
-              copy[k] = { ...copy[k], thinking: '' };
-            });
-            return copy;
-          });
           break;
 
         case 'message':
@@ -224,14 +169,6 @@ export default function AgentChat() {
               },
             ]);
           }
-          // Clear any nexus active flags — final combined output has been posted
-          setNexus((prev) => {
-            const copy = { ...prev };
-            (Object.keys(copy) as Array<'STRATEGIST' | 'CODER'>).forEach((k) => {
-              copy[k] = { ...copy[k], active: false, content: '' };
-            });
-            return copy;
-          });
 
           pendingContentRef.current = '';
           pendingThinkingRef.current = '';
@@ -584,27 +521,6 @@ export default function AgentChat() {
           <span className="text-[10px]" style={{ color: 'var(--pc-text-faint)' }}>
             {connected ? t('agent.connected_status') : t('agent.disconnected_status')}
           </span>
-        </div>
-      </div>
-
-      {/* Nexus Log (floating) */}
-      <div className={"nexus-panel fixed right-4 top-20 w-80 h-[calc(100vh-8rem)] p-4 rounded-xl transition-all " + (debateActive ? ' nexus-debate' : '')} style={{ background: 'var(--pc-bg-surface)', border: '1px solid var(--pc-border)' }}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--pc-text-primary)' }}>Nexus Log</h3>
-          <div className={"status-dot" + (debateActive ? ' status-dot-info' : '')} />
-        </div>
-        <div className="space-y-4 overflow-auto h-full">
-          <div>
-            <div className="text-xs font-mono mb-1" style={{ color: 'var(--pc-text-muted)' }}>STRATEGIST</div>
-            <pre className="nexus-entry text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--pc-text-primary)', whiteSpace: 'pre-wrap' }}>{nexus.STRATEGIST.content || '-'}</pre>
-          </div>
-          <div>
-            <div className="text-xs font-mono mb-1" style={{ color: 'var(--pc-text-muted)' }}>CODER</div>
-            <pre className="nexus-entry text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--pc-text-primary)', whiteSpace: 'pre-wrap' }}>{nexus.CODER.content || '-'}</pre>
-          </div>
-          <div className="mt-3 text-xs" style={{ color: 'var(--pc-text-muted)' }}>
-            Soul: {soul ? `${(soul.cpu_percent||0).toFixed(1)}% CPU · ${Math.round((soul.mem_used_kb||0)/1024/1024)}MB used` : '—'}
-          </div>
         </div>
       </div>
 

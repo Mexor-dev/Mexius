@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Cpu,
   Clock,
@@ -12,9 +12,11 @@ import {
   MessageSquare,
   ChevronRight,
   Wifi,
+  MemoryStick,
+  Zap,
 } from 'lucide-react';
-import type { StatusResponse, CostSummary, Session, ChannelDetail } from '@/types/api';
-import { getStatus, getCost, getSessions, getChannels } from '@/lib/api';
+import type { StatusResponse, CostSummary, Session, ChannelDetail, HardwareTelemetry } from '@/types/api';
+import { getStatus, getCost, getSessions, getChannels, getHardware } from '@/lib/api';
 import { useSSE } from '@/hooks/useSSE';
 import { t } from '@/lib/i18n';
 
@@ -136,6 +138,163 @@ const TABS: { id: TabId; labelKey: string; icon: typeof LayoutDashboard }[] = [
   { id: 'sessions', labelKey: 'dashboard.tab_sessions', icon: Users },
   { id: 'channels', labelKey: 'dashboard.tab_channels', icon: Wifi },
 ];
+
+// ---------------------------------------------------------------------------
+// Hardware telemetry gauges — memoized to avoid re-render on fast polling
+// ---------------------------------------------------------------------------
+
+const SPARKLINE_POINTS = 30;
+
+function Sparkline({ values, color, height = 32 }: { values: number[]; color: string; height?: number }) {
+  const pts = values.slice(-SPARKLINE_POINTS);
+  if (pts.length < 2) return null;
+  const max = Math.max(...pts, 1);
+  const w = 120;
+  const h = height;
+  const step = w / (SPARKLINE_POINTS - 1);
+  const coords = pts.map((v, i) => `${i * step},${h - (v / max) * h}`);
+  const d = `M${coords.join(' L')}`;
+  const fill = `M${coords[0]} L${coords.join(' L')} L${(pts.length - 1) * step},${h} L0,${h} Z`;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height }} preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={`grad-${color.replace(/[^a-z0-9]/gi, '')}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={fill} fill={`url(#grad-${color.replace(/[^a-z0-9]/gi, '')})`} />
+      <path d={d} stroke={color} strokeWidth="1.5" fill="none" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function GaugeRing({ percent, color, size = 48 }: { percent: number; color: string; size?: number }) {
+  const r = (size - 6) / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = (percent / 100) * circ;
+  return (
+    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+      <circle cx={size / 2} cy={size / 2} r={r} stroke="var(--pc-border)" strokeWidth="4" fill="none" />
+      <circle
+        cx={size / 2} cy={size / 2} r={r}
+        stroke={color} strokeWidth="4" fill="none"
+        strokeDasharray={`${dash} ${circ}`}
+        strokeLinecap="round"
+        style={{ transition: 'stroke-dasharray 0.5s ease' }}
+      />
+    </svg>
+  );
+}
+
+const HardwareGauges = function HardwareGaugesInner() {
+  const [hw, setHw] = useState<HardwareTelemetry | null>(null);
+  const [cpuHistory, setCpuHistory] = useState<number[]>([]);
+  const [ramHistory, setRamHistory] = useState<number[]>([]);
+  const [gpuHistory, setGpuHistory] = useState<number[]>([]);
+  const [vramHistory, setVramHistory] = useState<number[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const poll = useCallback(() => {
+    getHardware().then((data) => {
+      setHw(data);
+      setCpuHistory((h) => [...h.slice(-(SPARKLINE_POINTS - 1)), data.cpu_percent]);
+      setRamHistory((h) => [...h.slice(-(SPARKLINE_POINTS - 1)), data.ram_percent]);
+      setGpuHistory((h) => [...h.slice(-(SPARKLINE_POINTS - 1)), data.gpu_percent]);
+      setVramHistory((h) => [...h.slice(-(SPARKLINE_POINTS - 1)), data.vram_used_gb]);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    poll();
+    timerRef.current = setInterval(poll, 3000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [poll]);
+
+  const gauges = useMemo(() => [
+    {
+      label: 'CPU',
+      icon: Cpu,
+      percent: hw?.cpu_percent ?? 0,
+      primary: `${(hw?.cpu_percent ?? 0).toFixed(1)}%`,
+      sub: 'utilization',
+      color: 'var(--pc-accent)',
+      history: cpuHistory,
+    },
+    {
+      label: 'RAM',
+      icon: MemoryStick,
+      percent: hw?.ram_percent ?? 0,
+      primary: hw ? `${hw.ram_used_gb.toFixed(1)} GB` : '—',
+      sub: hw ? `/ ${hw.ram_total_gb.toFixed(1)} GB` : '',
+      color: '#34d399',
+      history: ramHistory,
+    },
+    {
+      label: 'GPU',
+      icon: Zap,
+      percent: hw?.gpu_percent ?? 0,
+      primary: `${(hw?.gpu_percent ?? 0).toFixed(1)}%`,
+      sub: hw?.model_loaded ? 'model loaded' : 'idle',
+      color: '#a78bfa',
+      history: gpuHistory,
+    },
+    {
+      label: 'VRAM',
+      icon: Database,
+      percent: hw && hw.vram_total_gb > 0 ? (hw.vram_used_gb / hw.vram_total_gb) * 100 : 0,
+      primary: hw ? `${hw.vram_used_gb.toFixed(1)} GB` : '—',
+      sub: hw && hw.vram_total_gb > 0 ? `/ ${hw.vram_total_gb.toFixed(1)} GB` : 'no data',
+      color: '#fbbf24',
+      history: vramHistory,
+    },
+  ], [hw, cpuHistory, ramHistory, gpuHistory, vramHistory]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'var(--pc-text-primary)' }}>
+            Hardware Telemetry
+          </h2>
+          <p className="text-xs" style={{ color: 'var(--pc-text-muted)' }}>
+            Live CPU, RAM, GPU and VRAM gauges.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium"
+          style={{
+            background: hw?.loaded_model ? 'rgba(167,139,250,0.10)' : 'var(--pc-bg-elevated)',
+            color: hw?.loaded_model ? '#a78bfa' : 'var(--pc-text-muted)',
+            border: `1px solid ${hw?.loaded_model ? 'rgba(167,139,250,0.25)' : 'var(--pc-border)'}`,
+          }}>
+          <Zap className="h-3.5 w-3.5" />
+          {hw?.loaded_model ? `Loaded model: ${hw.loaded_model}` : 'No Ollama model currently resident'}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {gauges.map(({ label, icon: Icon, percent, primary, sub, color, history }) => (
+          <div key={label} className="card p-4 animate-slide-in-up overflow-hidden">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-xl" style={{ background: `rgba(var(--pc-accent-rgb), 0.08)`, color }}>
+                  <Icon className="h-4 w-4" />
+                </div>
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--pc-text-muted)' }}>{label}</span>
+              </div>
+              <GaugeRing percent={percent} color={color} size={40} />
+            </div>
+            <p className="text-xl font-bold mb-0.5" style={{ color: 'var(--pc-text-primary)' }}>{primary}</p>
+            <p className="text-xs mb-3" style={{ color: 'var(--pc-text-faint)' }}>{sub}</p>
+            <div className="-mx-4 -mb-4">
+              <Sparkline values={history} color={color} height={28} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Overview Tab (existing dashboard content)
@@ -819,6 +978,9 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">
+      {/* Hardware Telemetry Gauges */}
+      <HardwareGauges />
+
       {/* Tab Navigation */}
       <div
         className="flex items-center gap-1 p-1 rounded-2xl"

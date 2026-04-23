@@ -1,14 +1,17 @@
-import { Zap } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowDownToLine, LoaderCircle, RotateCw, Zap } from 'lucide-react';
 import SectionCard from '../controls/SectionCard';
 import FieldRow from '../controls/FieldRow';
 import NumberInput from '../controls/NumberInput';
 import Slider from '../controls/Slider';
 import Select from '../controls/Select';
+import { getOllamaModels, pullOllamaModel } from '@/lib/api';
 import { t } from '@/lib/i18n';
 
 interface Props {
   config: Record<string, unknown>;
   onUpdate: (field: string, value: unknown) => void;
+  onCommit: (updates: Array<{ path: string; value: unknown }>) => Promise<void>;
 }
 
 const LOCALE_OPTIONS = [
@@ -148,17 +151,89 @@ const MODELS_BY_PROVIDER: Record<string, { value: string; label: string }[]> = {
   ],
 };
 
-export default function GeneralSection({ config, onUpdate }: Props) {
+export default function GeneralSection({ config, onUpdate, onCommit }: Props) {
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [ollamaReachable, setOllamaReachable] = useState<boolean | null>(null);
+  const [loadingOllama, setLoadingOllama] = useState(false);
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
+  const [pullModelName, setPullModelName] = useState('');
+  const [pullingModel, setPullingModel] = useState(false);
+  const [pullMessage, setPullMessage] = useState<string | null>(null);
   const provider = (config.default_provider as string) ?? 'openrouter';
-  const modelOptions = MODELS_BY_PROVIDER[provider];
   const currentModel = (config.default_model as string) ?? '';
+  const modelOptions = useMemo(() => {
+    if (provider === 'ollama') {
+      return ollamaModels.map((model) => ({ value: model, label: model }));
+    }
+    return MODELS_BY_PROVIDER[provider];
+  }, [ollamaModels, provider]);
+
+  const loadOllamaModels = async () => {
+    setLoadingOllama(true);
+    setOllamaError(null);
+    try {
+      const data = await getOllamaModels();
+      setOllamaReachable(data.reachable);
+      setOllamaModels(data.models);
+      if (data.models.length > 0 && (!currentModel || !data.models.includes(currentModel))) {
+        onUpdate('default_model', data.models[0]);
+      }
+      if (!data.reachable && data.error) {
+        setOllamaError(data.error);
+      }
+    } catch (error: unknown) {
+      setOllamaReachable(false);
+      setOllamaModels([]);
+      setOllamaError(error instanceof Error ? error.message : 'Failed to load Ollama models');
+    } finally {
+      setLoadingOllama(false);
+    }
+  };
+
+  useEffect(() => {
+    if (provider === 'ollama') {
+      loadOllamaModels();
+    }
+  }, [provider]);
 
   // When provider changes, auto-select the first model for that provider
   const handleProviderChange = (v: string) => {
     onUpdate('default_provider', v);
+    if (v === 'ollama') {
+      onUpdate('default_model', '');
+      return;
+    }
     const models = MODELS_BY_PROVIDER[v];
     if (models && models.length > 0) {
       onUpdate('default_model', models[0]!.value);
+    }
+  };
+
+  const handleOllamaModelSelect = async (model: string) => {
+    onUpdate('default_provider', 'ollama');
+    onUpdate('default_model', model);
+    await onCommit([
+      { path: 'default_provider', value: 'ollama' },
+      { path: 'default_model', value: model },
+    ]);
+  };
+
+  const handlePullModel = async () => {
+    const model = pullModelName.trim();
+    if (!model) return;
+    setPullingModel(true);
+    setPullMessage(null);
+    try {
+      const result = await pullOllamaModel(model);
+      setPullMessage(result.message);
+      setPullModelName('');
+      window.setTimeout(() => {
+        loadOllamaModels();
+      }, 3000);
+    } catch (error: unknown) {
+      setPullMessage(error instanceof Error ? error.message : 'Failed to start Ollama pull');
+    } finally {
+      setPullingModel(false);
     }
   };
 
@@ -176,7 +251,75 @@ export default function GeneralSection({ config, onUpdate }: Props) {
         />
       </FieldRow>
       <FieldRow label={t('config.field.default_model')} description={t('config.field.default_model.desc')}>
-        {modelOptions ? (
+        {provider === 'ollama' ? (
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              {modelOptions && modelOptions.length > 0 ? (
+                <Select
+                  value={modelOptions.some((o) => o.value === currentModel) ? currentModel : modelOptions[0]?.value ?? ''}
+                  onChange={handleOllamaModelSelect}
+                  options={modelOptions}
+                  disabled={loadingOllama}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={currentModel}
+                  onChange={(e) => onUpdate('default_model', e.target.value)}
+                  placeholder={loadingOllama ? 'detecting local models...' : 'enter local ollama model'}
+                  className="input-electric text-sm px-3 py-1.5 w-64 font-mono"
+                />
+              )}
+              <button
+                type="button"
+                onClick={loadOllamaModels}
+                disabled={loadingOllama}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+                style={{ borderColor: 'var(--pc-border)', color: 'var(--pc-text-secondary)', background: 'var(--pc-bg-surface)' }}
+              >
+                {loadingOllama ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+                Refresh
+              </button>
+            </div>
+            <div className="text-[11px] max-w-80 text-right" style={{ color: ollamaReachable === false ? 'var(--color-status-error)' : 'var(--pc-text-muted)' }}>
+              {loadingOllama
+                ? 'Detecting local Ollama models...'
+                : modelOptions && modelOptions.length > 0
+                  ? `Detected ${modelOptions.length} local model${modelOptions.length === 1 ? '' : 's'} from Ollama.`
+                  : ollamaError
+                    ? ollamaError
+                    : 'Ollama is reachable, but no local models were returned. Pull a model first or enter one manually.'}
+            </div>
+            {(!modelOptions || modelOptions.length === 0) && (
+              <div className="flex flex-col items-end gap-2 w-full max-w-80">
+                <div className="flex items-center gap-2 w-full justify-end">
+                  <input
+                    type="text"
+                    value={pullModelName}
+                    onChange={(e) => setPullModelName(e.target.value)}
+                    placeholder="e.g. qwen3.5:35b"
+                    className="input-electric text-sm px-3 py-1.5 w-52 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePullModel}
+                    disabled={pullingModel || !pullModelName.trim()}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50"
+                    style={{ borderColor: 'var(--pc-border)', color: 'var(--pc-text-secondary)', background: 'var(--pc-bg-surface)' }}
+                  >
+                    {pullingModel ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ArrowDownToLine className="h-3.5 w-3.5" />}
+                    Pull Model
+                  </button>
+                </div>
+                {pullMessage && (
+                  <div className="text-[11px] max-w-80 text-right" style={{ color: 'var(--pc-text-muted)' }}>
+                    {pullMessage}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : modelOptions ? (
           <Select
             value={modelOptions.some((o) => o.value === currentModel) ? currentModel : ''}
             onChange={(v) => onUpdate('default_model', v)}

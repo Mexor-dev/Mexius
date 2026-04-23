@@ -1,0 +1,24 @@
+[package]
+name        = "lattice_kernel"
+version     = "0.1.0"
+edition     = "2021"
+
+[lib]
+name        = "lattice_kernel"
+crate-type  = ["rlib"]
+
+[[bin]]
+name        = "lattice_bench"
+path        = "src/main.rs"
+
+[dependencies]
+memmap2     = { workspace = true }
+parking_lot = { workspace = true }
+crossbeam   = { workspace = true }
+bytemuck    = { workspace = true }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+# no extra crates needed; we use core::arch intrinsics directly
+
+[dev-dependencies]
+tempfile = "3"

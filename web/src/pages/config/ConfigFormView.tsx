@@ -14,6 +14,7 @@ import { t } from '@/lib/i18n';
 interface ConfigFormViewProps {
   config: Record<string, unknown>;
   onUpdate: (path: string, value: unknown) => void;
+  onCommit: (updates: Array<{ path: string; value: unknown }>) => Promise<void>;
 }
 
 const NAV_ITEMS = [
@@ -26,7 +27,7 @@ const NAV_ITEMS = [
   { key: 'gateway', icon: Server, label: () => t('config.section.gateway') },
 ];
 
-export default function ConfigFormView({ config, onUpdate }: ConfigFormViewProps) {
+export default function ConfigFormView({ config, onUpdate, onCommit }: ConfigFormViewProps) {
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const scrollTo = useCallback((key: string) => {
@@ -66,7 +67,7 @@ export default function ConfigFormView({ config, onUpdate }: ConfigFormViewProps
       {/* Scrollable form content */}
       <div className="flex-1 overflow-y-auto space-y-4 pr-1">
         <div ref={setRef('general')}>
-          <GeneralSection config={config} onUpdate={onUpdate} />
+          <GeneralSection config={config} onUpdate={onUpdate} onCommit={onCommit} />
         </div>
         <div ref={setRef('memory')}>
           <MemorySection config={config} onUpdate={onUpdate} />

@@ -169,3 +169,58 @@ export interface SessionMessagesResponse {
   messages: SessionMessageRow[];
   session_persistence: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Hardware telemetry
+// ---------------------------------------------------------------------------
+
+export interface HardwareTelemetry {
+  cpu_percent: number;
+  ram_used_gb: number;
+  ram_total_gb: number;
+  ram_percent: number;
+  gpu_percent: number;
+  vram_used_gb: number;
+  vram_total_gb: number;
+  model_loaded: boolean;
+  loaded_model?: string;
+}
+
+// ---------------------------------------------------------------------------
+// ZeroClaw tool status
+// ---------------------------------------------------------------------------
+
+export interface ZeroClawTool {
+  name: string;
+  tool_id: string;
+  description: string;
+  available: boolean;
+  locked: boolean;
+  icon: string;
+}
+
+// ---------------------------------------------------------------------------
+// Nexus / Chain-of-Thought
+// ---------------------------------------------------------------------------
+
+export interface NexusMessage {
+  type: 'nexus_connected' | 'heartbeat' | 'thinking' | 'reasoning_start' | 'reasoning_end';
+  message?: string;
+  content?: string;
+  stream?: string;
+  tick?: number;
+  timestamp?: string;
+}
+
+export interface OllamaModelsResponse {
+  provider: 'ollama';
+  reachable: boolean;
+  models: string[];
+  error?: string;
+}
+
+export interface OllamaPullResponse {
+  status: 'started';
+  model: string;
+  message: string;
+}

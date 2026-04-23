@@ -23,6 +23,7 @@ export default function Config() {
     success,
     parseError,
     updateField,
+    updateFieldsAndSave,
     switchMode,
     updateRawToml,
     save,
@@ -110,7 +111,7 @@ export default function Config() {
 
       {/* Content: Form or TOML editor */}
       {mode === 'form' ? (
-        <ConfigFormView config={parsedConfig} onUpdate={updateField} />
+        <ConfigFormView config={parsedConfig} onUpdate={updateField} onCommit={updateFieldsAndSave} />
       ) : (
         <ConfigTomlEditor value={rawToml} onChange={updateRawToml} />
       )}
