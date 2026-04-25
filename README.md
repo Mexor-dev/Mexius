@@ -1,105 +1,35 @@
-🔱 Goldclaw: The Sovereign Machine-Person
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/83e61083-b886-4794-9680-3e035dbc425b" alt="Mexius Logo" width="100%" style="background-color: #000000; border-radius: 2px; border: 1px solid #d4af37;">
+</p>
 
-Goldclaw is a high-performance, private AI engine engineered for total cognitive sovereignty. It is a synthesis of three elite frameworks: the "skeletal" speed of ZeroClaw, the advanced reasoning loops of Hermes, and the modular agentic versatility of OpenClaw. The result is a "Machine-Person" that lives, learns, and evolves on your hardware.
+<p align="center">
+  <img src="https://img.shields.io/badge/Status-Sovereign-gold?style=for-the-badge" alt="Status">
+  <img src="https://img.shields.io/badge/Framework-Rust-orange?style=for-the-badge" alt="Rust">
+  <img src="https://img.shields.io/badge/Interface-Sharp--Professional-cyan?style=for-the-badge" alt="UI">
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
+</p>
 
-🧬 The Goldclaw DNA
+<h1 align="center">🔱 MEXIUS: THE SOVEREIGN MACHINE-PERSON</h1>
 
-Goldclaw is built on a "Golden-Ratio" architecture:
+<p align="center">
+  <b>A high-performance, private AI engine engineered for total cognitive autonomy.</b><br>
+  <i>The definitive synthesis of ZeroClaw execution, Hermes reasoning, and OpenClaw versatility.</i>
+</p>
 
-Speed (ZeroClaw Foundation): Ultra-lean Rust/Node primitives for sub-10ms memory retrieval.
+---
 
-Intelligence (Hermes Framework): Deep chain-of-thought reasoning and complex task planning.
+### 🧬 THE ARCHITECTURAL DNA
+**Mexius** is built on a **"Golden-Ratio"** architecture, ensuring it lives, learns, and evolves exclusively on your hardware.
 
-Agency (OpenClaw Versatility): Modular tool-use and seamless integration with local APIs.
+* **⚡ SPEED:** Ultra-lean Rust primitives (ZeroClaw) for sub-10ms memory retrieval.
+* **🧠 INTELLIGENCE:** Deep chain-of-thought reasoning (Hermes) for complex planning and delegation.
+* **🛠️ AGENCY:** Modular tool-use (OpenClaw) for seamless local API orchestration.
 
-✨ Key Sovereign Features
+---
 
-🌌 The Dream State & Self-Evolution
-Goldclaw doesn't just wait for prompts. In its "Dream State," the engine autonomously processes past interactions, defragments its vector memory, and synthesizes new insights. This allows for Self-Evolution: the agent updates its own SOUL.md and memory weights to better align with your goals over time.
+### 🚀 GETTING STARTED
 
-👥 Multi-Agent Toggle
-Transition from a single focused entity to a collaborative swarm. With the Multi-Agent Toggle, Goldclaw can bifurcate its personality to tackle complex projects. Spin up a "Strategist" and a "Coder" within the same environment, allowing them to peer-review and iterate on tasks autonomously.
-
-🖥️ Native WebUI
-A streamlined, high-performance interface designed for the 2026 AI era:
-
-Real-Time Soul Monitor: Watch the agent's internal state and emotional vectoring live.
-
-Memory Explorer: Visualize and prune the RAM-pinned LanceDB clusters.
-
-Toggle Control: Instant hardware switches for Multi-Agent mode and Dream-State cycles.
-
-🚀 RAM-Pinned Architecture
-By pinning embedding models and vector stores directly to system RAM, Goldclaw achieves near-instant recall of long-term context, bypassing the latency of traditional disk-based databases.
-
-
-📥 One-Line Install
-Deploy Goldclaw on any Linux/WSL system with:
-
+**1. One-Line Installation:**
+Deploy the Mexius core on any Linux/WSL system:
 ```bash
-curl -sSL https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh | bash
-```
-
-
-
-**Quick Start**
-After install, just run:
-
-```bash
-mexius start
-```
-
-
-**Doctor & Troubleshooting**
-
-To verify your install and environment, run:
-
-```bash
-mexius doctor
-```
-
-This will check:
-- Rust/Cargo availability
-- Shell tool execution permissions
-- That the gateway port (42617) is available
-- Write permissions for the toolset (/tmp)
-- That all embedded tools are ready
-- That config.toml is present (if needed)
-
-If you see any warnings, check `/tmp/mexius.log` for details.
-
-**You only need `mexius start` to launch the agent and dashboard.**
-
-The install script sets up a global symlink or adds the binary to your PATH so you can run `mexius` from anywhere.
-
-🛠️ Getting Started
-Onboard: Run mexius onboard to initialize your local workspace.
-
-The Soul: Edit workspace/SOUL.md to define the agent's core identity.
-
-The Dream: Enable "Dream State" in the WebUI to allow the engine to begin self-evolution.
-
-**Troubleshooting**
-
-- **Binary probe fails**: If the installer or `mexius` reports a missing component or a "binary probe failed" message, re-run the installer to rebuild the single `mexius` binary and start the service:
-
-	```bash
-	./install.sh
-	```
-
-	The install script now builds and installs only the `mexius` binary (the execution layer is embedded). After install, start the agent with `mexius start` and check `/tmp/mexius.log` for details.
-
-**Tool usage (internal OpenClaw)
-- The embedded tool runner accepts Hermes intents with the `run_tool:<name>` format.
-- For `shell` runs, send intent `run_tool:shell` and put the shell command in the message content.
-- To create a file, use intent `run_tool:create_file` and set the message content so the first line is the file path and the remaining text is the file body. Example content:
-
-	```text
-	/tmp/example.txt
-	Hello from Goldclaw (written by the embedded OpenClaw)
-	```
-
-	For appending to a file, use `run_tool:append_file` with the same content format.
-
-📄 License
-Goldclaw is open-source under the MIT License. Build, fork, and evolve—just keep it sovereign.
+curl -sSL [https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh](https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh) | bash<img width="768" height="856" alt="logo" src="https://github.com/user-attachments/assets/dabfdf78-c0ad-410b-bdf1-6b96a9ad7f72" />
