@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/83e61083-b886-4794-9680-3e035dbc425b" alt="Mexius Logo" width="100%" style="background-color: #000000; border-radius: 2px; border: 1px solid #d4af37;">
+  <img src="https://github.com/user-attachments/assets/dabfdf78-c0ad-410b-bdf1-6b96a9ad7f72" alt="Mexius Logo" width="100%" style="background-color: #000000; border-radius: 2px; border: 1px solid #d4af37;">
 </p>
 
 <p align="center">
@@ -32,4 +32,4 @@
 **1. One-Line Installation:**
 Deploy the Mexius core on any Linux/WSL system:
 ```bash
-curl -sSL [https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh](https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh) | bash<img width="768" height="856" alt="logo" src="https://github.com/user-attachments/assets/dabfdf78-c0ad-410b-bdf1-6b96a9ad7f72" />
+curl -sSL [https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh](https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh) | bash
