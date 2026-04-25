@@ -156,6 +156,8 @@ export interface WsMessage {
   timestamp?: string;
   job_id?: string;
   success?: boolean;
+  /** Display name of the model that produced this response (set by Model Mesh) */
+  model_name?: string;
 }
 
 /** Row from GET /api/sessions/{id}/messages */
@@ -187,16 +189,48 @@ export interface HardwareTelemetry {
 }
 
 // ---------------------------------------------------------------------------
-// ZeroClaw tool status
+// Mexius embedded tool status
 // ---------------------------------------------------------------------------
 
-export interface ZeroClawTool {
+export interface MexiusTool {
   name: string;
   tool_id: string;
   description: string;
   available: boolean;
   locked: boolean;
   icon: string;
+}
+
+// ---------------------------------------------------------------------------
+// Ollama VRAM / process status  (/api/ollama/ps proxy)
+// ---------------------------------------------------------------------------
+
+export interface OllamaRunningModel {
+  name: string;
+  model: string;
+  size: number;
+  digest: string;
+  details: {
+    parent_model?: string;
+    format?: string;
+    family?: string;
+    parameter_size?: string;
+    quantization_level?: string;
+  };
+  expires_at: string;
+  size_vram: number;
+}
+
+export interface OllamaVramResponse {
+  models: OllamaRunningModel[];
+}
+
+// ---------------------------------------------------------------------------
+// Nexus Supervisor prompt response
+// ---------------------------------------------------------------------------
+
+export interface NexusSupervisorPromptResponse {
+  prompt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,4 +257,54 @@ export interface OllamaPullResponse {
   status: 'started';
   model: string;
   message: string;
+}
+
+// ─── Sovereignty / Modes ───────────────────────────────────────────────────
+
+export type SovereigntyStateValue = 'idle' | 'active' | 'dreaming' | 'nexus';
+
+export interface StateStatusResponse {
+  state: SovereigntyStateValue;
+  db_read_only: boolean;
+  user_input_enabled: boolean;
+}
+
+// ─── Nexus Agent Events ────────────────────────────────────────────────────
+
+export interface NexusAgentEvent {
+  type: 'agent_delegation' | 'agent_result' | 'heartbeat' | 'nexus_connected';
+  from_agent?: string;
+  to_agent?: string;
+  task?: string;
+  result?: string | null;
+  timestamp?: string;
+  tick?: number;
+  sovereignty_state?: SovereigntyStateValue;
+  stream?: string;
+  message?: string;
+}
+
+// ─── Model Registry ────────────────────────────────────────────────────────
+
+export type ModelSource = 'ollama' | 'openai' | 'anthropic' | 'custom';
+
+export interface RegisteredModel {
+  id: string;
+  custom_name: string;
+  display_name?: string;
+  model_id: string;
+  api_endpoint: string;
+  api_key?: string;
+  source: ModelSource;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RegisterModelRequest {
+  custom_name: string;
+  display_name?: string;
+  model_id: string;
+  api_endpoint: string;
+  api_key?: string;
+  source: ModelSource;
 }

@@ -25,6 +25,7 @@ interface ChatMessage {
   thinking?: string;
   markdown?: boolean;
   toolCall?: ToolCallInfo;
+  model_name?: string;
   timestamp: Date;
 }
 
@@ -165,6 +166,7 @@ export default function AgentChat() {
                 content,
                 thinking,
                 markdown: true,
+                model_name: msg.model_name,
                 timestamp: new Date(),
               },
             ]);
@@ -387,7 +389,7 @@ export default function AgentChat() {
             <div className="h-16 w-16 rounded-3xl flex items-center justify-center mb-4 animate-float" style={{ background: 'var(--pc-accent-glow)' }}>
               <Bot className="h-8 w-8" style={{ color: 'var(--pc-accent)' }} />
             </div>
-            <p className="text-lg font-semibold mb-1" style={{ color: 'var(--pc-text-primary)' }}>Herma Agent</p>
+            <p className="text-lg font-semibold mb-1" style={{ color: 'var(--pc-text-primary)' }}>Mexius</p>
             <p className="text-sm" style={{ color: 'var(--pc-text-muted)' }}>{t('agent.start_conversation')}</p>
           </div>
         )}
@@ -414,6 +416,9 @@ export default function AgentChat() {
               )}
             </div>
             <div className="relative max-w-[75%]">
+              {msg.role === 'agent' && msg.model_name && (
+                <span style={{ fontSize: '10px', fontWeight: 600, color: '#a78bfa', letterSpacing: '0.06em', display: 'block', marginBottom: '3px', opacity: 0.75 }}>[{msg.model_name}]</span>
+              )}
               <div
                 className="rounded-2xl px-4 py-3 border"
                 style={

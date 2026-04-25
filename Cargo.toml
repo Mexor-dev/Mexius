@@ -1,7 +1,8 @@
 [workspace]
 members = [
-    "crates/goldclaw-api",
-    "crates/goldclaw-memory-mini",
+    "crates/mexius-api",
+    "crates/mexius-memory-mini",
+    "crates/mexius-memory-extra",
     "crates/lattice_kernel",
     "crates/species_kernel",
 ]

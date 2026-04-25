@@ -7,17 +7,17 @@ import { isTauri, tauriGatewayUrl } from './tauri';
 
 declare global {
   interface Window {
-    __HERMA_BASE__?: string;
-    __HERMA_GATEWAY__?: string;
+    __MEXIUS_BASE__?: string;
+    __MEXIUS_GATEWAY__?: string;
   }
 }
 
-/** Gateway path prefix (e.g. "/herma"), or empty string when served at root. */
+/** Gateway path prefix (e.g. "/mexius"), or empty string when served at root. */
 export const basePath: string = isTauri()
   ? ''
-  : (window.__HERMA_BASE__ ?? '').replace(/\/+$/, '');
+  : (window.__MEXIUS_BASE__ ?? '').replace(/\/+$/, '');
 
 /** Full origin for API requests. Defaults to Tauri gateway or the current origin. */
 export const apiOrigin: string = isTauri()
   ? tauriGatewayUrl()
-  : (window.__HERMA_GATEWAY__ ?? window.location.origin);
+  : (window.__MEXIUS_GATEWAY__ ?? window.location.origin);

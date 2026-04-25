@@ -37,7 +37,7 @@ By pinning embedding models and vector stores directly to system RAM, Goldclaw a
 Deploy Goldclaw on any Linux/WSL system with:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Mexor-dev/Herma/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh | bash
 ```
 
 
@@ -46,7 +46,7 @@ curl -sSL https://raw.githubusercontent.com/Mexor-dev/Herma/main/install.sh | ba
 After install, just run:
 
 ```bash
-goldclaw start
+mexius start
 ```
 
 
@@ -55,7 +55,7 @@ goldclaw start
 To verify your install and environment, run:
 
 ```bash
-goldclaw doctor
+mexius doctor
 ```
 
 This will check:
@@ -66,14 +66,14 @@ This will check:
 - That all embedded tools are ready
 - That config.toml is present (if needed)
 
-If you see any warnings, check `/tmp/goldclaw.log` for details.
+If you see any warnings, check `/tmp/mexius.log` for details.
 
-**You only need `goldclaw start` to launch the agent and dashboard.**
+**You only need `mexius start` to launch the agent and dashboard.**
 
-The install script sets up a global symlink or adds the binary to your PATH so you can run `goldclaw` from anywhere.
+The install script sets up a global symlink or adds the binary to your PATH so you can run `mexius` from anywhere.
 
 🛠️ Getting Started
-Onboard: Run goldclaw onboard to initialize your local workspace.
+Onboard: Run mexius onboard to initialize your local workspace.
 
 The Soul: Edit workspace/SOUL.md to define the agent's core identity.
 
@@ -81,13 +81,13 @@ The Dream: Enable "Dream State" in the WebUI to allow the engine to begin self-e
 
 **Troubleshooting**
 
-- **Binary probe fails**: If the installer or `goldclaw` reports a missing component or a "binary probe failed" message, re-run the installer to rebuild the single `goldclaw` binary and start the service:
+- **Binary probe fails**: If the installer or `mexius` reports a missing component or a "binary probe failed" message, re-run the installer to rebuild the single `mexius` binary and start the service:
 
 	```bash
 	./install.sh
 	```
 
-	The install script now builds and installs only the `goldclaw` binary (the execution layer is embedded). After install, start the agent with `goldclaw start` and check `/tmp/goldclaw.log` for details.
+	The install script now builds and installs only the `mexius` binary (the execution layer is embedded). After install, start the agent with `mexius start` and check `/tmp/mexius.log` for details.
 
 **Tool usage (internal OpenClaw)
 - The embedded tool runner accepts Hermes intents with the `run_tool:<name>` format.

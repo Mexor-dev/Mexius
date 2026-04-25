@@ -1,0 +1,22 @@
+[package]
+name = "mexius-memory"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mexius_memory"
+path = "src/lib.rs"
+
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["sync"] }
+anyhow = "1.0"
+once_cell = "1"
+serde_json = "1"
+sha2 = "0.10"
+rustc-hash = "1.1"
+parking_lot = "0.12"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }

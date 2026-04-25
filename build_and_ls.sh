@@ -4,5 +4,5 @@ set -euo pipefail
 HERMA_ROOT="${HERMA_ROOT:-$HOME/herma}"
 cd "${HERMA_ROOT}"
 cargo clean
-cargo build --release --manifest-path "${HERMA_ROOT}/crates/goldclaw-api/Cargo.toml" --bin herma-gateway
+cargo build --release --manifest-path "${HERMA_ROOT}/crates/mexius-api/Cargo.toml" --bin herma-gateway
 ls -l "${HERMA_ROOT}/target/release/herma-gateway" || true

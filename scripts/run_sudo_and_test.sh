@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-REPO="/home/user/herma"
+REPO="/home/user/mexius"
 mkdir -p "$REPO/run_logs"
 # Record whoami under sudo
 printf "anticaz\n" | sudo -S -p "" whoami > "$REPO/run_logs/sudo_check.txt" 2>&1 || true
@@ -9,8 +9,8 @@ printf "anticaz\n" | sudo -S -p "" apt-get update > "$REPO/run_logs/install_sudo
 printf "anticaz\n" | sudo -S -p "" apt-get install -y libssl-dev pkg-config build-essential ca-certificates curl python3 >> "$REPO/run_logs/install_sudo.log" 2>&1 || true
 echo "===APT_DONE===" >> "$REPO/run_logs/install_sudo.log"
 # Start gateway detached
-pkill -f herma-gateway || true
-setsid "$REPO/target/release/herma-gateway" gateway 0.0.0.0:42617 > "$REPO/run_logs/gateway_run.log" 2>&1 < /dev/null &
+pkill -f mexius || true
+setsid "$REPO/target/release/mexius" start 0.0.0.0:42617 > "$REPO/run_logs/gateway_run.log" 2>&1 < /dev/null &
 echo $! > "$REPO/run_logs/gateway.pid" || true
 sleep 1
 # Pairing smoke tests

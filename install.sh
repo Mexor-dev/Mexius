@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 
-# Herma One-Click Installer
+# Mexius One-Click Installer
 REQUIRED_PACKAGES="libssl-dev pkg-config build-essential ca-certificates curl python3"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,17 +59,17 @@ if [ -d "$REPO_ROOT/web" ]; then
 fi
 
 # Build Gateway (Rust)
-echo "Building herma-gateway (Rust release)..."
-cargo build -p goldclaw-api --release
+echo "Building mexius (Rust release)..."
+cargo build -p mexius-api --release
 
 # Ensure backend storage directories exist
-echo "Initializing Herma storage directories..."
-mkdir -p "$HOME/.herma/lancedb_store"
+echo "Initializing Mexius storage directories..."
+mkdir -p "$HOME/.mexius/lancedb_store"
 
 # Locate built binary
-BINARY_PATH=$(find "$REPO_ROOT/target/release" -maxdepth 1 -type f -executable -name "herma-gateway" | head -n 1 || true)
+BINARY_PATH=$(find "$REPO_ROOT/target/release" -maxdepth 1 -type f -executable -name "mexius" | head -n 1 || true)
 if [ -z "$BINARY_PATH" ]; then
-  echo "Error: herma-gateway binary not found in target/release. Build may have failed." >&2
+  echo "Error: mexius binary not found in target/release. Build may have failed." >&2
   ls -l "$REPO_ROOT/target/release" || true
   exit 1
 fi
@@ -79,12 +79,18 @@ chmod +x "$BINARY_PATH"
 
 # Optionally install symlink
 if [ -w /usr/local/bin ]; then
-  sudo ln -sf "$BINARY_PATH" /usr/local/bin/herma-gateway
-  echo "Symlinked /usr/local/bin/herma-gateway -> $BINARY_PATH"
+  sudo ln -sf "$BINARY_PATH" /usr/local/bin/mexius
+  echo "Symlinked /usr/local/bin/mexius -> $BINARY_PATH"
+  # Also expose as 'mexius' for the new brand name
+  MEXIUS_PATH=$(find "$REPO_ROOT/target/release" -maxdepth 1 -type f -executable -name "mexius" | head -n 1 || true)
+  if [ -n "$MEXIUS_PATH" ]; then
+    sudo ln -sf "$MEXIUS_PATH" /usr/local/bin/mexius
+    echo "Symlinked /usr/local/bin/mexius -> $MEXIUS_PATH"
+  fi
 else
   echo "No write access to /usr/local/bin. You can run the binary directly: $BINARY_PATH"
 fi
 
-echo "Install complete. You can start Herma with:"
+echo "Install complete. You can start Mexius with:"
 echo "  $BINARY_PATH gateway 0.0.0.0:42617"
 echo "Or via systemd user service if desired."

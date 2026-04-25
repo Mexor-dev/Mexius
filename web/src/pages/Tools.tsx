@@ -11,12 +11,13 @@ import {
   Brain,
   Globe,
   Shield,
+  Calendar,
 } from 'lucide-react';
-import type { ToolSpec, CliTool, ZeroClawTool } from '@/types/api';
-import { getTools, getCliTools, getZeroClawTools } from '@/lib/api';
+import type { ToolSpec, CliTool, MexiusTool } from '@/types/api';
+import { getTools, getCliTools, getMexiusTools } from '@/lib/api';
 import { t } from '@/lib/i18n';
 
-// icon lookup for ZeroClaw tools
+// icon lookup for Mexius tools
 function zeroIcon(iconName: string | undefined) {
   switch ((iconName ?? '').toLowerCase()) {
     case 'terminal':   return Terminal;
@@ -24,6 +25,9 @@ function zeroIcon(iconName: string | undefined) {
     case 'folder':     return FolderOpen;
     case 'brain':      return Brain;
     case 'globe':      return Globe;
+    case 'search':     return Search;
+    case 'shield':     return Shield;
+    case 'calendar':   return Calendar;
     default:           return Wrench;
   }
 }
@@ -31,7 +35,7 @@ function zeroIcon(iconName: string | undefined) {
 export default function Tools() {
   const [tools, setTools] = useState<ToolSpec[]>([]);
   const [cliTools, setCliTools] = useState<CliTool[]>([]);
-  const [zeroTools, setZeroTools] = useState<ZeroClawTool[]>([]);
+  const [zeroTools, setZeroTools] = useState<MexiusTool[]>([]);
   const [search, setSearch] = useState('');
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
   const [agentSectionOpen, setAgentSectionOpen] = useState(true);
@@ -41,7 +45,7 @@ export default function Tools() {
   const [toolAuthModes, setToolAuthModes] = useState<Record<string, 'user' | 'autonomous'>>({});
 
   useEffect(() => {
-    Promise.all([getTools(), getCliTools(), getZeroClawTools()])
+    Promise.all([getTools(), getCliTools(), getMexiusTools()])
       .then(([t, c, z]) => { setTools(t); setCliTools(c); setZeroTools(z); })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -49,7 +53,7 @@ export default function Tools() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('herma.toolAuthModes');
+      const raw = localStorage.getItem('mexius.toolAuthModes');
       if (raw) {
         const parsed = JSON.parse(raw) as Record<string, 'user' | 'autonomous'>;
         setToolAuthModes(parsed);
@@ -61,7 +65,7 @@ export default function Tools() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('herma.toolAuthModes', JSON.stringify(toolAuthModes));
+      localStorage.setItem('mexius.toolAuthModes', JSON.stringify(toolAuthModes));
     } catch {
       // storage may be unavailable (private mode)
     }
@@ -237,13 +241,13 @@ export default function Tools() {
         </div>
       )}
 
-      {/* ZeroClaw Embedded Tools */}
+      {/* Mexius Embedded Tools */}
       {zeroTools.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-4">
             <Shield className="h-4 w-4" style={{ color: '#a78bfa' }} />
             <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'var(--pc-text-primary)' }}>
-              ZeroClaw Embedded Tools
+              Mexius Embedded Tools
             </h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger-children">

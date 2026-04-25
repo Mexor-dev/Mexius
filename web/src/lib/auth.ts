@@ -1,4 +1,4 @@
-const TOKEN_KEY = 'herma_token';
+const TOKEN_KEY = 'mexius_token';
 
 /**
  * Retrieve the stored authentication token.

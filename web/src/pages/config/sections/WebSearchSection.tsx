@@ -15,6 +15,7 @@ const PROVIDER_OPTIONS = [
   { value: 'duckduckgo', label: 'DuckDuckGo' },
   { value: 'brave', label: 'Brave' },
   { value: 'searxng', label: 'SearXNG' },
+  { value: 'camofox', label: 'Camofox (Local Anti-Detection)' },
 ];
 
 export default function WebSearchSection({ config, onUpdate }: Props) {

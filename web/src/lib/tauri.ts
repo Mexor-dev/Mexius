@@ -1,9 +1,9 @@
-// Tauri detection utilities for Herma Desktop.
+// Tauri detection utilities for Mexius Desktop.
 
 declare global {
   interface Window {
     __TAURI__?: unknown;
-    __HERMA_GATEWAY__?: string;
+    __MEXIUS_GATEWAY__?: string;
   }
 }
 
@@ -12,4 +12,4 @@ export const isTauri = (): boolean => '__TAURI__' in window;
 
 /** Gateway base URL when running inside Tauri (defaults to localhost). */
 export const tauriGatewayUrl = (): string =>
-  window.__HERMA_GATEWAY__ ?? 'http://127.0.0.1:42617';
+  window.__MEXIUS_GATEWAY__ ?? 'http://127.0.0.1:42617';

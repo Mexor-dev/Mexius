@@ -12,6 +12,11 @@ import type {
   Session,
   ChannelDetail,
   SessionMessagesResponse,
+  StateStatusResponse,
+  SovereigntyStateValue,
+  RegisteredModel,
+  RegisterModelRequest,
+  OllamaVramResponse,
 } from '../types/api';
 import { clearToken, getToken, setToken } from './auth';
 import { apiOrigin, basePath } from './basePath';
@@ -67,7 +72,7 @@ export async function apiFetch<T = unknown>(
 
   if (response.status === 401) {
     clearToken();
-    window.dispatchEvent(new Event('herma-unauthorized'));
+    window.dispatchEvent(new Event('mexius-unauthorized'));
     throw new UnauthorizedError();
   }
 
@@ -379,10 +384,10 @@ export function getHardware(): Promise<import('../types/api').HardwareTelemetry>
 }
 
 // ---------------------------------------------------------------------------
-// ZeroClaw tool status
+// Mexius embedded tool status
 // ---------------------------------------------------------------------------
 
-export function getZeroClawTools(): Promise<import('../types/api').ZeroClawTool[]> {
+export function getMexiusTools(): Promise<import('../types/api').MexiusTool[]> {
   return apiFetch('/api/v1/tools/status');
 }
 
@@ -407,4 +412,81 @@ export function saveSoul(content: string): Promise<void> {
 
 export function getLogs(limit = 200): Promise<{ lines: string[]; count: number }> {
   return apiFetch<{ lines: string[]; count: number }>(`/api/v1/logs?limit=${limit}`);
+}
+
+// ---------------------------------------------------------------------------
+// Sovereignty State — Dream State & Mode Toggling
+// ---------------------------------------------------------------------------
+
+export function getStateStatus(): Promise<StateStatusResponse> {
+  return apiFetch<StateStatusResponse>('/api/state/status');
+}
+
+export function toggleState(state: SovereigntyStateValue): Promise<{ ok: boolean; state: SovereigntyStateValue }> {
+  return apiFetch<{ ok: boolean; state: SovereigntyStateValue }>('/api/state/toggle', {
+    method: 'POST',
+    body: JSON.stringify({ state }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Model Registry — Dynamic Model Mesh
+// ---------------------------------------------------------------------------
+
+export function getRegisteredModels(): Promise<RegisteredModel[]> {
+  return apiFetch<RegisteredModel[]>('/api/models');
+}
+
+export function registerModel(req: RegisterModelRequest): Promise<{ ok: boolean; id: string }> {
+  return apiFetch<{ ok: boolean; id: string }>('/api/models', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+export function deleteRegisteredModel(id: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/models/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function patchRegisteredModel(
+  id: string,
+  patch: Partial<RegisterModelRequest & { is_active: boolean }>,
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/models/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Nexus Sub-Agent Delegation
+// ---------------------------------------------------------------------------
+
+export function delegateToNexusAgent(
+  agent: string,
+  task: string,
+  systemPrompt = '',
+): Promise<{ ok: boolean; agent: string; task: string }> {
+  return apiFetch<{ ok: boolean; agent: string; task: string }>('/api/nexus/delegate', {
+    method: 'POST',
+    body: JSON.stringify({ agent, task, system_prompt: systemPrompt }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Nexus Supervisor Prompt
+// ---------------------------------------------------------------------------
+
+export function getSupervisorPrompt(): Promise<{ prompt: string }> {
+  return apiFetch<{ prompt: string }>('/api/nexus/supervisor-prompt');
+}
+
+// ---------------------------------------------------------------------------
+// Ollama VRAM / process status
+// ---------------------------------------------------------------------------
+
+export function getOllamaVram(): Promise<OllamaVramResponse> {
+  return apiFetch<OllamaVramResponse>('/api/ollama/ps');
 }

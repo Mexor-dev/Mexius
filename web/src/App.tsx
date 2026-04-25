@@ -18,11 +18,14 @@ import Nexus from './pages/Nexus';
 import SoulEditor from './pages/SoulEditor';
 import Telemetry from './pages/Telemetry';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { SovereigntyProvider } from './contexts/SovereigntyContext';
+import ModelMesh from './pages/ModelMesh';
 import { DraftContext, useDraftStore } from './hooks/useDraft';
 import { setLocale, type Locale } from './lib/i18n';
 import { loadLocale, saveLocale } from './contexts/ThemeContext';
 import { basePath } from './lib/basePath';
 import { getAdminPairCode } from './lib/api';
+import PinGate from './components/PinGate';
 
 // Locale context
 interface LocaleContextType {
@@ -60,7 +63,7 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('[Herma] Render error:', error, info.componentStack);
+    console.error('[Mexius] Render error:', error, info.componentStack);
   }
 
   render() {
@@ -137,12 +140,12 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
 
         <div className="text-center mb-8">
           <img
-            src={`${basePath}/herma.png`}
-            alt="Herma"
+            src={`${basePath}/mexius.png`}
+            alt="Mexius"
             className="h-20 w-20 rounded-2xl object-cover mx-auto mb-4 animate-float"
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
-          <h1 className="text-2xl font-bold mb-2 text-gradient-blue">Herma</h1>
+          <h1 className="text-2xl font-bold mb-2 text-gradient-blue">Mexius</h1>
           <p className="text-sm" style={{ color: 'var(--pc-text-muted)' }}>
             {displayCode ? 'Your pairing code' : 'Enter the pairing code from your terminal'}
           </p>
@@ -206,8 +209,8 @@ function AppContent() {
     const handler = () => {
       logout();
     };
-    window.addEventListener('herma-unauthorized', handler);
-    return () => window.removeEventListener('herma-unauthorized', handler);
+    window.addEventListener('mexius-unauthorized', handler);
+    return () => window.removeEventListener('mexius-unauthorized', handler);
   }, [logout]);
 
   if (loading) {
@@ -226,6 +229,7 @@ function AppContent() {
   }
 
   return (
+    <SovereigntyProvider>
     <DraftContext.Provider value={draftStore}>
       <LocaleContext.Provider value={{ locale, setAppLocale }}>
         <Routes>
@@ -245,11 +249,13 @@ function AppContent() {
             <Route path="/doctor" element={<Doctor />} />
             <Route path="/pairing" element={<Pairing />} />
             <Route path="/canvas" element={<Canvas />} />
+            <Route path="/model-mesh" element={<ModelMesh />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </LocaleContext.Provider>
     </DraftContext.Provider>
+    </SovereigntyProvider>
   );
 }
 
@@ -257,7 +263,9 @@ export default function App() {
   return (
     <AuthProvider>
       <ThemeProvider>
-        <AppContent />
+        <PinGate>
+          <AppContent />
+        </PinGate>
       </ThemeProvider>
     </AuthProvider>
   );

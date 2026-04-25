@@ -153,7 +153,7 @@ export default function SoulEditor() {
       <div className="rounded-2xl px-4 py-3 text-xs flex-shrink-0"
         style={{ background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.15)', color: 'var(--pc-text-muted)' }}>
         <strong style={{ color: '#a78bfa' }}>soul.md</strong> defines the agent's identity, values, and behavioral boundaries.
-        Changes are synced immediately to the Herma data directory on save.
+        Changes are synced immediately to the Mexius data directory on save.
         Supports Markdown — use headings, bullet points, and code blocks freely.
       </div>
 

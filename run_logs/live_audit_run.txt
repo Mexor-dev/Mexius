@@ -1,7 +1,7 @@
 LIVE_AUDIT_START Wed Apr 22 21:17:13 BST 2026
-   Compiling goldclaw-memory v0.1.0 (/home/user/herma/crates/goldclaw-memory-mini)
+   Compiling mexius-memory v0.1.0 (/home/user/herma/crates/mexius-memory-mini)
     Finished `release` profile [optimized] target(s) in 0.59s
-     Running unittests src/lib.rs (target/release/deps/goldclaw_memory-a32433fd636a9283)
+     Running unittests src/lib.rs (target/release/deps/mexius_memory-a32433fd636a9283)
 
 running 0 tests
 
@@ -16,7 +16,7 @@ test live_audit ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-   Doc-tests goldclaw_memory
+   Doc-tests mexius_memory
 
 running 0 tests
 

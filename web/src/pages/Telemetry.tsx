@@ -245,6 +245,57 @@ export default function Telemetry() {
         </div>
       </div>
 
+      {/* ── Hardware Slim Power Meters ─────────────────────────────── */}
+      {hardware && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px', flexShrink: 0 }}>
+          {([
+            {
+              label: 'CPU',
+              value: hardware.cpu_percent,
+              color: '#d4af37',
+              extra: '',
+            },
+            {
+              label: 'RAM',
+              value: hardware.ram_percent,
+              color: '#00f2ff',
+              extra: ` ${hardware.ram_used_gb.toFixed(1)}/${hardware.ram_total_gb.toFixed(1)} GB`,
+            },
+            {
+              label: 'GPU',
+              value: hardware.gpu_percent,
+              color: '#a78bfa',
+              extra: '',
+            },
+            {
+              label: 'VRAM',
+              value: hardware.vram_total_gb > 0 ? Math.round((hardware.vram_used_gb / hardware.vram_total_gb) * 100) : 0,
+              color: '#fb923c',
+              extra: ` ${hardware.vram_used_gb.toFixed(1)}/${hardware.vram_total_gb.toFixed(1)} GB`,
+            },
+          ] as Array<{ label: string; value: number; color: string; extra: string }>)
+            .map((m) => (
+              <div key={m.label} style={{ padding: '10px 12px', background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: '10px', letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)' }}>{m.label}</span>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: m.color, fontFamily: 'inherit' }}>
+                    {m.value.toFixed(0)}%{m.extra}
+                  </span>
+                </div>
+                <div style={{ height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '1px', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${Math.min(m.value, 100)}%`,
+                    background: `linear-gradient(90deg, ${m.color}88, ${m.color})`,
+                    borderRadius: '1px',
+                    transition: 'width 0.6s ease',
+                  }} />
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+
       {/* Log area */}
       <div
         ref={containerRef}

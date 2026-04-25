@@ -14,7 +14,7 @@ target/
 *.sqlite3
 
 # Goldclaw runtime storage (private data)
-/home/user/.goldclaw/storage/
+/home/user/.mexius/storage/
 
 # VS Code settings
 .vscode/

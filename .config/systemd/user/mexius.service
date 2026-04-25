@@ -1,0 +1,11 @@
+[Unit]
+Description=Mexius Gateway (User Service)
+
+After=network.target ollama.service
+
+[Service]
+ExecStart=/home/user/mexius/target/release/mexius start
+Restart=always
+
+[Install]
+WantedBy=default.target

@@ -5,6 +5,7 @@ import { t, SUPPORTED_LOCALES } from '@/lib/i18n';
 import { useLocaleContext } from '@/App';
 import { useAuth } from '@/hooks/useAuth';
 import { SettingsModal } from '@/components/SettingsModal';
+import ModeToggle from '@/components/ModeToggle';
 
 const routeTitles: Record<string, string> = {
   '/': 'nav.dashboard',
@@ -80,6 +81,11 @@ export default function Header({ onMenuToggle, onCollapseToggle, collapsed }: He
 
           {/* Page title */}
           <h1 className="h-9 leading-9 text-lg font-semibold tracking-tight" style={{ color: 'var(--pc-text-primary)' }}>{pageTitle}</h1>
+        </div>
+
+        {/* Center: Mode Toggle */}
+        <div className="hidden md:flex absolute left-1/2 -translate-x-1/2">
+          <ModeToggle />
         </div>
 
         {/* Right-side controls */}

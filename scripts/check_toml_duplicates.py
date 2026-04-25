@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re, collections, sys
-p = Path('crates/goldclaw-memory-mini/Cargo.toml')
+p = Path('crates/mexius-memory-mini/Cargo.toml')
 if not p.exists():
     print('MISSING:', p)
     sys.exit(1)

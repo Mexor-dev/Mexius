@@ -42,7 +42,7 @@ export default function Canvas() {
     }
 
     const token = getToken();
-    const protocols = token ? ['herma.v1', `bearer.${token}`] : ['herma.v1'];
+    const protocols = token ? ['mexius.v1', `bearer.${token}`] : ['mexius.v1'];
     const ws = new WebSocket(getWsUrl(id), protocols);
 
     ws.onopen = () => setConnected(true);

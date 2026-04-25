@@ -4,9 +4,10 @@ import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import { ErrorBoundary } from '@/App';
 import StarMap from '@/components/StarMap';
+import DreamOverlay from '@/components/DreamOverlay';
 import { useResonance } from '@/hooks/useResonance';
 
-const SIDEBAR_COLLAPSED_KEY = 'zeroclaw-sidebar-collapsed';
+const SIDEBAR_COLLAPSED_KEY = 'mexius-sidebar-collapsed';
 
 export default function Layout() {
   const { pathname } = useLocation();
@@ -71,6 +72,7 @@ export default function Layout() {
           onCollapseToggle={() => setCollapsed((c) => !c)}
           collapsed={collapsed}
         />
+        <DreamOverlay />
 
         {/* Page content — ErrorBoundary keyed by pathname so the nav shell
             survives a page crash and the boundary resets on route change */}

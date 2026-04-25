@@ -1,8 +1,8 @@
 BUILD_START Wed Apr 22 21:17:06 BST 2026
-   Compiling goldclaw-memory v0.1.0 (/home/user/herma/crates/goldclaw-memory-mini)
-   Compiling goldclaw-api v0.1.0 (/home/user/herma/crates/goldclaw-api)
+   Compiling mexius-memory v0.1.0 (/home/user/herma/crates/mexius-memory-mini)
+   Compiling mexius-api v0.1.0 (/home/user/herma/crates/mexius-api)
 warning: static `AUDIT` is never used
-  --> crates/goldclaw-api/src/memory_store.rs:20:8
+  --> crates/mexius-api/src/memory_store.rs:20:8
    |
 20 | static AUDIT: Lazy<RwLock<VecDeque<Value>>> = Lazy::new(|| RwLock::new(VecDeque::new()));
    |        ^^^^^
@@ -10,17 +10,17 @@ warning: static `AUDIT` is never used
    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: function `add_audit_event` is never used
-  --> crates/goldclaw-api/src/memory_store.rs:36:14
+  --> crates/mexius-api/src/memory_store.rs:36:14
    |
 36 | pub async fn add_audit_event(ev: Value) {
    |              ^^^^^^^^^^^^^^^
 
 warning: function `last_audit_events` is never used
-  --> crates/goldclaw-api/src/memory_store.rs:44:14
+  --> crates/mexius-api/src/memory_store.rs:44:14
    |
 44 | pub async fn last_audit_events(n: usize) -> Vec<Value> {
    |              ^^^^^^^^^^^^^^^^^
 
-warning: `goldclaw-api` (bin "herma-gateway") generated 3 warnings
+warning: `mexius-api` (bin "herma-gateway") generated 3 warnings
     Finished `release` profile [optimized] target(s) in 5.07s
 BUILD_EXIT:0

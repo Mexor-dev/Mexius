@@ -15,6 +15,7 @@ import {
   Sparkles,
   Feather,
   Zap,
+  Cpu,
 } from 'lucide-react';
 import { t } from '@/lib/i18n';
 
@@ -33,6 +34,7 @@ const navItems = [
   { to: '/telemetry', icon: Zap, labelKey: 'nav.telemetry' },
   { to: '/doctor', icon: Stethoscope, labelKey: 'nav.doctor' },
   { to: '/canvas', icon: Monitor, labelKey: 'nav.canvas' },
+  { to: '/model-mesh', icon: Cpu, labelKey: 'nav.model_mesh' },
 ];
 
 // Shared nav item sub-component — eliminates duplication between mobile & desktop nav
@@ -165,8 +167,8 @@ function SidebarLogo({ collapsed }: { collapsed: boolean }) {
       <div className="relative shrink-0">
         <div className="absolute -inset-1.5 rounded-xl" style={{ background: 'linear-gradient(135deg, rgba(var(--pc-accent-rgb), 0.15), rgba(var(--pc-accent-rgb), 0.05))' }} />
         <img
-          src={`${basePath}/herma.png`}
-          alt="Herma"
+          src={`${basePath}/mexius.png`}
+          alt="Mexius"
           className="relative h-9 w-9 rounded-xl object-cover"
           onError={(e) => {
             e.currentTarget.style.display = 'none';
@@ -174,14 +176,18 @@ function SidebarLogo({ collapsed }: { collapsed: boolean }) {
         />
       </div>
       <span
-        className="text-sm font-semibold tracking-wide whitespace-nowrap transition-opacity duration-200"
+        className="whitespace-nowrap transition-opacity duration-200 flex flex-col leading-tight"
         style={{
-          color: 'var(--pc-text-primary)',
           opacity: collapsed ? 0 : 1,
           pointerEvents: collapsed ? 'none' : 'auto',
         }}
       >
-        Herma
+        <span style={{ fontSize: '13px', fontWeight: 700, letterSpacing: '0.12em', color: 'var(--pc-accent)' }}>
+          MEXIUS
+        </span>
+        <span style={{ fontSize: '9px', letterSpacing: '0.18em', color: 'rgba(212,175,55,0.45)', lineHeight: 1 }}>
+          v1.0 // SOVEREIGN CORE
+        </span>
       </span>
     </div>
   );
@@ -194,7 +200,7 @@ function SidebarFooter({ collapsed, layout }: { collapsed: boolean; layout: 'des
         className="px-5 py-4 border-t text-[10px] uppercase tracking-wider"
         style={{ borderColor: 'var(--pc-border)', color: 'var(--pc-text-faint)' }}
       >
-        Herma Runtime
+        Mexius Runtime
       </div>
     );
   }
@@ -212,7 +218,7 @@ function SidebarFooter({ collapsed, layout }: { collapsed: boolean; layout: 'des
         textAlign: collapsed ? 'center' : 'left',
       }}
     >
-      {!collapsed && 'Herma Runtime'}
+      {!collapsed && 'Mexius Runtime'}
     </div>
   );
 }

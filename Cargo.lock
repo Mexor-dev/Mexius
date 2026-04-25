@@ -495,44 +495,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "goldclaw-api"
-version = "0.1.0"
-dependencies = [
- "base64",
- "chrono",
- "clap",
- "env_logger",
- "goldclaw-memory",
- "hyper",
- "lattice_kernel",
- "log",
- "once_cell",
- "parking_lot",
- "reqwest",
- "ring",
- "serde",
- "serde_json",
- "species_kernel",
- "tempfile",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "goldclaw-memory"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "once_cell",
- "parking_lot",
- "rustc-hash",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
-]
-
-[[package]]
 name = "h2"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -934,6 +896,52 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "714098028fe011992e1c3962653c96b2d578c4b4bce9036e15ff220319b1e0e3"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "mexius-api"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "clap",
+ "env_logger",
+ "hyper",
+ "lattice_kernel",
+ "log",
+ "mexius-memory",
+ "once_cell",
+ "parking_lot",
+ "reqwest",
+ "ring",
+ "serde",
+ "serde_json",
+ "species_kernel",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "mexius-memory"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "once_cell",
+ "parking_lot",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
+name = "mexius-memory-extra"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
