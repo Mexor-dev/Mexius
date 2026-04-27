@@ -56,3 +56,20 @@ When toggled into the "Dream State," Mexius stops processing external requests a
 Deploy the Mexius core on any Linux/WSL system:
 ```bash
 curl -sSL [https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh](https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh) | bash![Uploading logo.png…]()
+
+
+2. Onboard & Identity:Initialize your workspace and define the core soul:
+
+Bash: mexius onboard
+
+(Edit workspace/SOUL.md to refine the agent's fundamental directives).
+
+3. Launch the Entity:Start the core engine and the secure WebUI Vault:
+
+Bash: mexius start
+
+4. Diagnostics:Verify system health, RAM-Pinned LanceDB access, and toolset connectivity:
+
+Bash: mexius doctor
+
+
