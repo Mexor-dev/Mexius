@@ -55,4 +55,4 @@ When toggled into the "Dream State," Mexius stops processing external requests a
 **1. One-Line Installation:**
 Deploy the Mexius core on any Linux/WSL system:
 ```bash
-curl -sSL [https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh](https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh) | bash
+curl -sSL [https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh](https://raw.githubusercontent.com/Mexor-dev/Mexius/main/install.sh) | bash![Uploading logo.png…]()
