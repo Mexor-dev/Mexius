@@ -12,7 +12,7 @@
 <h1 align="center">🔱 MEXIUS: THE SOVEREIGN MACHINE-PERSON</h1>
 
 <p align="center">
-  <b>A high-performance, private AI engine engineered for total cognitive autonomy.</b><br>
+  <b>A high-performance, private AI engine engineered for total speed & cognitive autonomy.</b><br>
   <i>The definitive synthesis of ZeroClaw execution, Hermes reasoning, and OpenClaw versatility.</i>
 </p>
 
